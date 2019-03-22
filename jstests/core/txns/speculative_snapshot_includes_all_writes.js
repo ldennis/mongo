@@ -22,15 +22,35 @@
     assert.commandWorked(testDB.createCollection(collName2, {writeConcern: {w: "majority"}}));
 
     const sessionOptions = {causalConsistency: false};
+
+    // For snapshot
     const session = db.getMongo().startSession(sessionOptions);
     const sessionDb = session.getDatabase(dbName);
     const sessionColl = sessionDb.getCollection(collName);
     const sessionColl2 = sessionDb.getCollection(collName2);
 
+    // For majority
     const session2 = db.getMongo().startSession(sessionOptions);
     const session2Db = session2.getDatabase(dbName);
     const session2Coll = session2Db.getCollection(collName);
     const session2Coll2 = session2Db.getCollection(collName2);
+
+    // For local
+    const session3 = db.getMongo().startSession(sessionOptions);
+    const session3Db = session3.getDatabase(dbName);
+    const session3Coll = session3Db.getCollection(collName);
+    const session3Coll2 = session3Db.getCollection(collName2);
+
+    // For default
+    const session4 = db.getMongo().startSession(sessionOptions);
+    const session4Db = session4.getDatabase(dbName);
+    const session4Coll = session4Db.getCollection(collName);
+    const session4Coll2 = session4Db.getCollection(collName2);
+
+    let checkNonSnapshotReads = (coll, coll2) => {
+        assert.sameMembers([{_id: 0}, {_id: 1}], coll.find().toArray());
+        assert.sameMembers([{_id: "a"}], coll2.find().toArray());
+    };
 
     // Clear ramlog so checkLog can't find log messages from previous times this fail point was
     // enabled.
@@ -64,20 +84,21 @@
     assert.commandWorked(testColl.insert([{_id: 1}]));
 
     jsTestLog("Start a snapshot transaction.");
-
     session.startTransaction({readConcern: {level: "snapshot"}});
-
     assert.sameMembers([{_id: 0}], sessionColl.find().toArray());
-
     assert.sameMembers([{_id: "a"}], sessionColl2.find().toArray());
 
     jsTestLog("Start a majority-read transaction.");
-
     session2.startTransaction({readConcern: {level: "majority"}});
+    checkNonSnapshotReads(session2Coll, session2Coll2);
 
-    assert.sameMembers([{_id: 0}, {_id: 1}], session2Coll.find().toArray());
+    jsTestLog("Start a local-read transaction.");
+    session3.startTransaction({readConcern: {level: "local"}});
+    checkNonSnapshotReads(session3Coll, session3Coll2);
 
-    assert.sameMembers([{_id: "a"}], session2Coll2.find().toArray());
+    jsTestLog("Start a transaction without specifying readConcern.");
+    session4.startTransaction();
+    checkNonSnapshotReads(session4Coll, session4Coll2);
 
     jsTestLog("Allow the uncommitted write to finish.");
     assert.commandWorked(db.adminCommand({
@@ -88,17 +109,21 @@
     joinHungWrite();
 
     jsTestLog("Double-checking that writes not committed at start of snapshot cannot appear.");
-    assert.sameMembers([{_id: 0}], sessionColl.find().toArray());
 
+    assert.sameMembers([{_id: 0}], sessionColl.find().toArray());
     assert.sameMembers([{_id: "a"}], sessionColl2.find().toArray());
 
-    assert.sameMembers([{_id: 0}, {_id: 1}], session2Coll.find().toArray());
+    checkNonSnapshotReads(session2Coll, session2Coll2);
 
-    assert.sameMembers([{_id: "a"}], session2Coll2.find().toArray());
+    checkNonSnapshotReads(session3Coll, session3Coll2);
+
+    checkNonSnapshotReads(session4Coll, session4Coll2);
 
     jsTestLog("Committing transactions.");
     session.commitTransaction();
     session2.commitTransaction();
+    session3.commitTransaction();
+    session4.commitTransaction();
 
     assert.sameMembers([{_id: 0}, {_id: 1}], sessionColl.find().toArray());
 
