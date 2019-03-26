@@ -23,15 +23,10 @@
 
     const sessionOptions = {causalConsistency: false};
 
-    function startSessionAndTransaction(readConcernLevel = "default") {
+    function startSessionAndTransaction(readConcernLevel) {
         let session = db.getMongo().startSession(sessionOptions);
-        if (readConcernLevel == "default") {
-            jsTestLog("Start a transaction without specifying readConcern.");
-            session.startTransaction();
-        } else {
-            jsTestLog("Start a transaction with readConcern " + readConcernLevel + ".");
-            session.startTransaction({readConcern: {level: readConcernLevel}});
-        }
+        jsTestLog("Start a transaction with readConcern " + readConcernLevel.level + ".");
+        session.startTransaction({readConcern: readConcernLevel});
         return session;
     };
 
@@ -74,16 +69,16 @@
     // the prior uncommitted write is committed.
     assert.commandWorked(testColl.insert([{_id: 1}]));
 
-    const snapshotSession = startSessionAndTransaction("snapshot");
+    const snapshotSession = startSessionAndTransaction({level: "snapshot"});
     checkReads(snapshotSession, [{_id: 0}], [{_id: "a"}]);
 
-    const majoritySession = startSessionAndTransaction("majority");
+    const majoritySession = startSessionAndTransaction({level: "majority"});
     checkReads(majoritySession, [{_id: 0}, {_id: 1}], [{_id: "a"}]);
 
-    const localSession = startSessionAndTransaction("local");
+    const localSession = startSessionAndTransaction({level: "local"});
     checkReads(localSession, [{_id: 0}, {_id: 1}], [{_id: "a"}]);
 
-    const defaultSession = startSessionAndTransaction();
+    const defaultSession = startSessionAndTransaction({});
     checkReads(defaultSession, [{_id: 0}, {_id: 1}], [{_id: "a"}]);
 
     jsTestLog("Allow the uncommitted write to finish.");
@@ -109,10 +104,7 @@
     localSession.commitTransaction();
     defaultSession.commitTransaction();
 
-    jsTestLog("A new transaction must see all committed writes.");
-    checkReads(snapshotSession, [{_id: 0}, {_id: 1}], [{_id: "a"}, {_id: "b"}]);
-    checkReads(majoritySession, [{_id: 0}, {_id: 1}], [{_id: "a"}, {_id: "b"}]);
-    checkReads(localSession, [{_id: 0}, {_id: 1}], [{_id: "a"}, {_id: "b"}]);
+    jsTestLog("A new local read must see all committed writes.");
     checkReads(defaultSession, [{_id: 0}, {_id: 1}], [{_id: "a"}, {_id: "b"}]);
 
     snapshotSession.endSession();
