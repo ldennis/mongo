@@ -138,12 +138,13 @@ void TransactionMetricsObserver::onCommit(ServerTransactionsMetrics* serverTrans
     }
 }
 
-void TransactionMetricsObserver::onAbortActive(ServerTransactionsMetrics* serverTransactionsMetrics,
-                                               TickSource* tickSource,
-                                               boost::optional<repl::OpTime> oldestOplogEntryOpTime,
-                                               boost::optional<repl::OpTime> abortOpTime,
-                                               Top* top,
-                                               bool wasPrepared) {
+void TransactionMetricsObserver::_onAbortActive(
+    ServerTransactionsMetrics* serverTransactionsMetrics,
+    TickSource* tickSource,
+    boost::optional<repl::OpTime> oldestOplogEntryOpTime,
+    boost::optional<repl::OpTime> abortOpTime,
+    Top* top,
+    bool wasPrepared) {
     invariant((oldestOplogEntryOpTime != boost::none && abortOpTime != boost::none) ||
               (oldestOplogEntryOpTime == boost::none && abortOpTime == boost::none));
 
@@ -174,7 +175,7 @@ void TransactionMetricsObserver::onAbortActive(ServerTransactionsMetrics* server
     }
 }
 
-void TransactionMetricsObserver::onAbortInactive(
+void TransactionMetricsObserver::_onAbortInactive(
     ServerTransactionsMetrics* serverTransactionsMetrics,
     TickSource* tickSource,
     boost::optional<repl::OpTime> oldestOplogEntryOpTime,
@@ -190,6 +191,24 @@ void TransactionMetricsObserver::onAbortInactive(
     // Remove this transaction's oldest oplog entry OpTime if one was written.
     if (oldestOplogEntryOpTime) {
         serverTransactionsMetrics->removeActiveOpTime(*oldestOplogEntryOpTime, boost::none);
+    }
+}
+
+void TransactionMetricsObserver::onAbort(ServerTransactionsMetrics* serverTransactionsMetrics,
+                                         TickSource* tickSource,
+                                         boost::optional<repl::OpTime> oldestOplogEntryOpTime,
+                                         boost::optional<repl::OpTime> abortOpTime,
+                                         Top* top,
+                                         bool wasPrepared) {
+    if (_singleTransactionStats.isActive()) {
+        _onAbortActive(serverTransactionsMetrics,
+                       tickSource,
+                       oldestOplogEntryOpTime,
+                       abortOpTime,
+                       top,
+                       wasPrepared);
+    } else {
+        _onAbortInactive(serverTransactionsMetrics, tickSource, oldestOplogEntryOpTime, top);
     }
 }
 
