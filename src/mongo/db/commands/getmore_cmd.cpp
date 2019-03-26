@@ -70,7 +70,7 @@ namespace mongo {
 namespace {
 
 MONGO_FAIL_POINT_DEFINE(rsStopGetMoreCmd);
-MONGO_FAIL_POINT_DEFINE(GetMoreHangBeforeReadlock);
+MONGO_FAIL_POINT_DEFINE(GetMoreHangBeforeReadLock);
 
 // The timeout when waiting for linearizable read concern on a getMore command.
 static constexpr int kLinearizableReadConcernTimeout = 15000;
@@ -344,12 +344,12 @@ public:
             } else {
                 invariant(cursorPin->lockPolicy() ==
                           ClientCursorParams::LockPolicy::kLockExternally);
-                if (MONGO_FAIL_POINT(GetMoreHangBeforeReadlock)) {
+                if (MONGO_FAIL_POINT(GetMoreHangBeforeReadLock)) {
                     // This log output is used in js tests so please leave it.
-                    log() << "GetMoreHangBeforeReadlock fail point enabled. Blocking until fail "
+                    log() << "GetMoreHangBeforeReadLock fail point enabled. Blocking until fail "
                              "point is disabled.";
-                    MONGO_FAIL_POINT_PAUSE_WHILE_SET(GetMoreHangBeforeReadlock);
-                    log() << "GetMoreHangBeforeReadlock fail point done blocking.";
+                    MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(opCtx,
+                                                                    GetMoreHangBeforeReadLock);
                 }
                 readLock.emplace(opCtx, _request.nss);
                 const int doNotChangeProfilingLevel = 0;
@@ -360,7 +360,7 @@ public:
                                      readLock->getDb() ? readLock->getDb()->getProfilingLevel()
                                                        : doNotChangeProfilingLevel);
 
-                // This checks whether we are allowed to read after acquiring our locks.
+                // Check whether we are allowed to read from this node after acquiring our locks.
                 uassertStatusOK(repl::ReplicationCoordinator::get(opCtx)->checkCanServeReadsFor(
                     opCtx, _request.nss, true));
             }

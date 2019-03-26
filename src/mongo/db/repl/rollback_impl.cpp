@@ -177,9 +177,9 @@ Status RollbackImpl::runRollback(OperationContext* opCtx) {
     if (MONGO_FAIL_POINT(rollbackHangAfterTransitionToRollback)) {
         // This log output is used in js tests so please leave it.
         log() << "rollbackHangAfterTransitionToRollback fail point enabled. Blocking until fail "
-                 "point is disabled. (rollback_impl)";
-        MONGO_FAIL_POINT_PAUSE_WHILE_SET(rollbackHangAfterTransitionToRollback);
-        log() << "rollbackHangAfterTransitionToRollback fail point done blocking. (rollback_impl)";
+                 "point is disabled (rollback_impl).";
+        MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(opCtx,
+                                                        rollbackHangAfterTransitionToRollback);
     }
 
     // We clear the SizeRecoveryState before we recover to a stable timestamp. This ensures that we
