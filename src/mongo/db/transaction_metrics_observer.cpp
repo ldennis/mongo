@@ -65,12 +65,8 @@ void TransactionMetricsObserver::onStash(ServerTransactionsMetrics* serverTransa
     //
     // Per transaction metrics.
     //
-    // The transaction operation may be trying to stash its resources when it has already been
-    // aborted by another thread, so we check that the transaction is active before setting it as
-    // inactive.
-    if (_singleTransactionStats.isActive()) {
-        _singleTransactionStats.setInactive(tickSource, tickSource->getTicks());
-    }
+    invariant(_singleTransactionStats.isActive());
+    _singleTransactionStats.setInactive(tickSource, tickSource->getTicks());
 
     //
     // Server wide transactions metrics.
@@ -85,6 +81,7 @@ void TransactionMetricsObserver::onUnstash(ServerTransactionsMetrics* serverTran
     //
     // Per transaction metrics.
     //
+    invariant(!_singleTransactionStats.isActive());
     _singleTransactionStats.setActive(tickSource->getTicks());
 
     //
@@ -110,11 +107,9 @@ void TransactionMetricsObserver::onCommit(ServerTransactionsMetrics* serverTrans
     // inactive. We use the same "now" time to prevent skew in the time-related metrics.
     auto curTick = tickSource->getTicks();
     _singleTransactionStats.setEndTime(curTick);
-    // The transaction operation may have already been aborted by another thread, so we check that
-    // the transaction is active before setting it as inactive.
-    if (_singleTransactionStats.isActive()) {
-        _singleTransactionStats.setInactive(tickSource, curTick);
-    }
+
+    invariant(_singleTransactionStats.isActive());
+    _singleTransactionStats.setInactive(tickSource, curTick);
 
     //
     // Server wide transactions metrics.
@@ -149,15 +144,13 @@ void TransactionMetricsObserver::_onAbortActive(
               (oldestOplogEntryOpTime == boost::none && abortOpTime == boost::none));
 
     auto curTick = tickSource->getTicks();
+    invariant(_singleTransactionStats.isActive());
     _onAbort(serverTransactionsMetrics, curTick, tickSource, top);
     //
     // Per transaction metrics.
     //
-    // The transaction operation may have already been aborted by another thread, so we check that
-    // the transaction is active before setting it as inactive.
-    if (_singleTransactionStats.isActive()) {
-        _singleTransactionStats.setInactive(tickSource, curTick);
-    }
+    invariant(_singleTransactionStats.isActive());
+    _singleTransactionStats.setInactive(tickSource, curTick);
 
     //
     // Server wide transactions metrics.
@@ -181,6 +174,7 @@ void TransactionMetricsObserver::_onAbortInactive(
     boost::optional<repl::OpTime> oldestOplogEntryOpTime,
     Top* top) {
     auto curTick = tickSource->getTicks();
+    invariant(!_singleTransactionStats.isActive());
     _onAbort(serverTransactionsMetrics, curTick, tickSource, top);
 
     //
