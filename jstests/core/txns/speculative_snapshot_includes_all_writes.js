@@ -23,33 +23,24 @@
 
     const sessionOptions = {causalConsistency: false};
 
-    // For snapshot
-    const session = db.getMongo().startSession(sessionOptions);
-    const sessionDb = session.getDatabase(dbName);
-    const sessionColl = sessionDb.getCollection(collName);
-    const sessionColl2 = sessionDb.getCollection(collName2);
+    function startSessionAndTransaction(readConcernLevel = "default") {
+        let session = db.getMongo().startSession(sessionOptions);
+        if (readConcernLevel == "default") {
+            jsTestLog("Start a transaction without specifying readConcern.");
+            session.startTransaction();
+        } else {
+            jsTestLog("Start a transaction with readConcern " + readConcernLevel + ".");
+            session.startTransaction({readConcern: {level: readConcernLevel}});
+        }
+        return session;
+    };
 
-    // For majority
-    const session2 = db.getMongo().startSession(sessionOptions);
-    const session2Db = session2.getDatabase(dbName);
-    const session2Coll = session2Db.getCollection(collName);
-    const session2Coll2 = session2Db.getCollection(collName2);
-
-    // For local
-    const session3 = db.getMongo().startSession(sessionOptions);
-    const session3Db = session3.getDatabase(dbName);
-    const session3Coll = session3Db.getCollection(collName);
-    const session3Coll2 = session3Db.getCollection(collName2);
-
-    // For default
-    const session4 = db.getMongo().startSession(sessionOptions);
-    const session4Db = session4.getDatabase(dbName);
-    const session4Coll = session4Db.getCollection(collName);
-    const session4Coll2 = session4Db.getCollection(collName2);
-
-    let checkNonSnapshotReads = (coll, coll2) => {
-        assert.sameMembers([{_id: 0}, {_id: 1}], coll.find().toArray());
-        assert.sameMembers([{_id: "a"}], coll2.find().toArray());
+    let checkReads = (session, collExpected, coll2Expected) => {
+        let sessionDb = session.getDatabase(dbName);
+        let coll = sessionDb.getCollection(collName);
+        let coll2 = sessionDb.getCollection(collName2);
+        assert.sameMembers(collExpected, coll.find().toArray());
+        assert.sameMembers(coll2Expected, coll2.find().toArray());
     };
 
     // Clear ramlog so checkLog can't find log messages from previous times this fail point was
@@ -83,22 +74,17 @@
     // the prior uncommitted write is committed.
     assert.commandWorked(testColl.insert([{_id: 1}]));
 
-    jsTestLog("Start a snapshot transaction.");
-    session.startTransaction({readConcern: {level: "snapshot"}});
-    assert.sameMembers([{_id: 0}], sessionColl.find().toArray());
-    assert.sameMembers([{_id: "a"}], sessionColl2.find().toArray());
+    const snapshotSession = startSessionAndTransaction("snapshot");
+    checkReads(snapshotSession, [{_id: 0}], [{_id: "a"}]);
 
-    jsTestLog("Start a majority-read transaction.");
-    session2.startTransaction({readConcern: {level: "majority"}});
-    checkNonSnapshotReads(session2Coll, session2Coll2);
+    const majoritySession = startSessionAndTransaction("majority");
+    checkReads(majoritySession, [{_id: 0}, {_id: 1}], [{_id: "a"}]);
 
-    jsTestLog("Start a local-read transaction.");
-    session3.startTransaction({readConcern: {level: "local"}});
-    checkNonSnapshotReads(session3Coll, session3Coll2);
+    const localSession = startSessionAndTransaction("local");
+    checkReads(localSession, [{_id: 0}, {_id: 1}], [{_id: "a"}]);
 
-    jsTestLog("Start a transaction without specifying readConcern.");
-    session4.startTransaction();
-    checkNonSnapshotReads(session4Coll, session4Coll2);
+    const defaultSession = startSessionAndTransaction();
+    checkReads(defaultSession, [{_id: 0}, {_id: 1}], [{_id: "a"}]);
 
     jsTestLog("Allow the uncommitted write to finish.");
     assert.commandWorked(db.adminCommand({
@@ -109,29 +95,28 @@
     joinHungWrite();
 
     jsTestLog("Double-checking that writes not committed at start of snapshot cannot appear.");
+    checkReads(snapshotSession, [{_id: 0}], [{_id: "a"}]);
 
-    assert.sameMembers([{_id: 0}], sessionColl.find().toArray());
-    assert.sameMembers([{_id: "a"}], sessionColl2.find().toArray());
-
-    checkNonSnapshotReads(session2Coll, session2Coll2);
-
-    checkNonSnapshotReads(session3Coll, session3Coll2);
-
-    checkNonSnapshotReads(session4Coll, session4Coll2);
+    jsTestLog(
+        "Double-checking that writes performed before the start of a transaction of 'majority' or lower must appear.");
+    checkReads(majoritySession, [{_id: 0}, {_id: 1}], [{_id: "a"}]);
+    checkReads(localSession, [{_id: 0}, {_id: 1}], [{_id: "a"}]);
+    checkReads(defaultSession, [{_id: 0}, {_id: 1}], [{_id: "a"}]);
 
     jsTestLog("Committing transactions.");
-    session.commitTransaction();
-    session2.commitTransaction();
-    session3.commitTransaction();
-    session4.commitTransaction();
+    snapshotSession.commitTransaction();
+    majoritySession.commitTransaction();
+    localSession.commitTransaction();
+    defaultSession.commitTransaction();
 
-    assert.sameMembers([{_id: 0}, {_id: 1}], sessionColl.find().toArray());
+    jsTestLog("A new transaction must see all committed writes.");
+    checkReads(snapshotSession, [{_id: 0}, {_id: 1}], [{_id: "a"}, {_id: "b"}]);
+    checkReads(majoritySession, [{_id: 0}, {_id: 1}], [{_id: "a"}, {_id: "b"}]);
+    checkReads(localSession, [{_id: 0}, {_id: 1}], [{_id: "a"}, {_id: "b"}]);
+    checkReads(defaultSession, [{_id: 0}, {_id: 1}], [{_id: "a"}, {_id: "b"}]);
 
-    assert.sameMembers([{_id: "a"}, {_id: "b"}], sessionColl2.find().toArray());
-
-    assert.sameMembers([{_id: 0}, {_id: 1}], session2Coll.find().toArray());
-
-    assert.sameMembers([{_id: "a"}, {_id: "b"}], session2Coll2.find().toArray());
-
-    session.endSession();
+    snapshotSession.endSession();
+    majoritySession.endSession();
+    localSession.endSession();
+    defaultSession.endSession();
 }());
