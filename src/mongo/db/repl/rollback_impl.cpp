@@ -175,7 +175,6 @@ Status RollbackImpl::runRollback(OperationContext* opCtx) {
     _listener->onTransitionToRollback();
 
     if (MONGO_FAIL_POINT(rollbackHangAfterTransitionToRollback)) {
-        // This log output is used in js tests so please leave it.
         log() << "rollbackHangAfterTransitionToRollback fail point enabled. Blocking until fail "
                  "point is disabled (rollback_impl).";
         MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(opCtx,
