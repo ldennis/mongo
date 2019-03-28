@@ -44,7 +44,7 @@
     }
 
     // Set up the replica set.
-    const rst = new ReplSetTest({nodes: 1, nodeOptions: {enableMajorityReadConcern: "true"}});
+    const rst = new ReplSetTest({nodes: 1});
     rst.startSet();
     rst.initiate();
     const primary = rst.getPrimary();
@@ -241,27 +241,6 @@
     // Verify that the oldestOpenUnpreparedReadTimestamp is a null timestamp since the transaction
     // has closed.
     assert.eq(newStatus.transactions.oldestOpenUnpreparedReadTimestamp, Timestamp(0, 0));
-
-    jsTest.log("Start a snapshot transaction at a time that is too old.");
-    session.startTransaction({readConcern: {level: "snapshot", atClusterTime: Timestamp(1, 1)}});
-    // Operation runs unstashTransactionResources() and throws prior to onUnstash().
-    assert.commandFailedWithCode(sessionDb.runCommand({find: collName}), ErrorCodes.SnapshotTooOld);
-
-    let metrics = assert.commandWorked(testDB.adminCommand({serverStatus: 1, repl: 0, metrics: 0}))
-                      .transactions;
-    assert.eq(0, metrics.currentActive);
-    assert.eq(1, metrics.currentInactive);
-    assert.eq(1, metrics.currentOpen);
-
-    // Kill the session that threw exception before.
-    assert.commandWorked(testDB.runCommand({killAllSessions: []}));
-
-    // Make sure currentActive, currentInactive and currentOpen are all 0.
-    metrics = assert.commandWorked(testDB.adminCommand({serverStatus: 1, repl: 0, metrics: 0}))
-                  .transactions;
-    assert.eq(0, metrics.currentActive);
-    assert.eq(0, metrics.currentInactive);
-    assert.eq(0, metrics.currentOpen);
 
     // End the session and stop the replica set.
     session.endSession();
