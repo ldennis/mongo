@@ -149,7 +149,6 @@ void TransactionMetricsObserver::_onAbortActive(
     //
     // Per transaction metrics.
     //
-    invariant(_singleTransactionStats.isActive());
     _singleTransactionStats.setInactive(tickSource, curTick);
 
     //
@@ -202,6 +201,8 @@ void TransactionMetricsObserver::onAbort(ServerTransactionsMetrics* serverTransa
                        top,
                        wasPrepared);
     } else {
+        invariant(abortOpTime == boost::none);
+        invariant(!wasPrepared);
         _onAbortInactive(serverTransactionsMetrics, tickSource, oldestOplogEntryOpTime, top);
     }
 }
