@@ -38,8 +38,8 @@
         let res = assert.throws(function() {
             db.runCommand({"getMore": cursorID, collection: "coll"});
         }, [], "network error");
-        // Make sure the connection of an outstanding read operation get closed during rollback even
-        // though the read was started before rollback.
+        // Make sure the connection of an outstanding read operation gets closed during rollback
+        // even though the read was started before rollback.
         assert.includes(res.toString(), "network error while attempting to run command");
     }, rollbackNode.port);
 

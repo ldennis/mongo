@@ -345,7 +345,6 @@ public:
                 invariant(cursorPin->lockPolicy() ==
                           ClientCursorParams::LockPolicy::kLockExternally);
                 if (MONGO_FAIL_POINT(GetMoreHangBeforeReadLock)) {
-                    // This log output is used in js tests so please leave it.
                     log() << "GetMoreHangBeforeReadLock fail point enabled. Blocking until fail "
                              "point is disabled.";
                     MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(opCtx,
