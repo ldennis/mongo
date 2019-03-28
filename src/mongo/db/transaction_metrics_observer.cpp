@@ -96,8 +96,7 @@ void TransactionMetricsObserver::onCommit(ServerTransactionsMetrics* serverTrans
                                           TickSource* tickSource,
                                           boost::optional<repl::OpTime> oldestOplogEntryOpTime,
                                           boost::optional<repl::OpTime> commitOpTime,
-                                          Top* top,
-                                          bool wasPrepared) {
+                                          Top* top) {
     invariant((oldestOplogEntryOpTime != boost::none && commitOpTime != boost::none) ||
               (oldestOplogEntryOpTime == boost::none && commitOpTime == boost::none));
     //
@@ -118,7 +117,7 @@ void TransactionMetricsObserver::onCommit(ServerTransactionsMetrics* serverTrans
     serverTransactionsMetrics->decrementCurrentOpen();
     serverTransactionsMetrics->decrementCurrentActive();
 
-    if (wasPrepared) {
+    if (_singleTransactionStats.isPrepared()) {
         serverTransactionsMetrics->incrementTotalPreparedThenCommitted();
         serverTransactionsMetrics->decrementCurrentPrepared();
     }
@@ -138,8 +137,7 @@ void TransactionMetricsObserver::_onAbortActive(
     TickSource* tickSource,
     boost::optional<repl::OpTime> oldestOplogEntryOpTime,
     boost::optional<repl::OpTime> abortOpTime,
-    Top* top,
-    bool wasPrepared) {
+    Top* top) {
     invariant((oldestOplogEntryOpTime != boost::none && abortOpTime != boost::none) ||
               (oldestOplogEntryOpTime == boost::none && abortOpTime == boost::none));
 
@@ -156,7 +154,7 @@ void TransactionMetricsObserver::_onAbortActive(
     //
     serverTransactionsMetrics->decrementCurrentActive();
 
-    if (wasPrepared) {
+    if (_singleTransactionStats.isPrepared()) {
         serverTransactionsMetrics->incrementTotalPreparedThenAborted();
         serverTransactionsMetrics->decrementCurrentPrepared();
     }
@@ -174,6 +172,7 @@ void TransactionMetricsObserver::_onAbortInactive(
     Top* top) {
     auto curTick = tickSource->getTicks();
     invariant(!_singleTransactionStats.isActive());
+    invariant(!_singleTransactionStats.isPrepared());
     _onAbort(serverTransactionsMetrics, curTick, tickSource, top);
 
     //
@@ -191,18 +190,12 @@ void TransactionMetricsObserver::onAbort(ServerTransactionsMetrics* serverTransa
                                          TickSource* tickSource,
                                          boost::optional<repl::OpTime> oldestOplogEntryOpTime,
                                          boost::optional<repl::OpTime> abortOpTime,
-                                         Top* top,
-                                         bool wasPrepared) {
+                                         Top* top) {
     if (_singleTransactionStats.isActive()) {
-        _onAbortActive(serverTransactionsMetrics,
-                       tickSource,
-                       oldestOplogEntryOpTime,
-                       abortOpTime,
-                       top,
-                       wasPrepared);
+        _onAbortActive(
+            serverTransactionsMetrics, tickSource, oldestOplogEntryOpTime, abortOpTime, top);
     } else {
         invariant(abortOpTime == boost::none);
-        invariant(!wasPrepared);
         _onAbortInactive(serverTransactionsMetrics, tickSource, oldestOplogEntryOpTime, top);
     }
 }

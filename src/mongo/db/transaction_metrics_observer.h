@@ -76,8 +76,7 @@ public:
                   TickSource* tickSource,
                   boost::optional<repl::OpTime> oldestOplogEntryOpTime,
                   boost::optional<repl::OpTime> commitOpTime,
-                  Top* top,
-                  bool wasPrepared);
+                  Top* top);
 
     /**
      * Updates relevant metrics when a transaction aborts.
@@ -87,8 +86,7 @@ public:
                  TickSource* tickSource,
                  boost::optional<repl::OpTime> oldestOplogEntryOpTime,
                  boost::optional<repl::OpTime> abortOpTime,
-                 Top* top,
-                 bool wasPrepared);
+                 Top* top);
 
     /**
      * Adds the prepareOpTime, which is currently the Timestamp of the first oplog entry written by
@@ -139,8 +137,7 @@ private:
                         TickSource* tickSource,
                         boost::optional<repl::OpTime> oldestOplogEntryOpTime,
                         boost::optional<repl::OpTime> abortOpTime,
-                        Top* top,
-                        bool wasPrepared);
+                        Top* top);
 
     /**
      * Updates relevant metrics when an inactive transaction aborts. Also removes this transaction's

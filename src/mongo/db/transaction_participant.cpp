@@ -1293,7 +1293,6 @@ void TransactionParticipant::Participant::_finishCommitTransaction(OperationCont
 
     {
         auto tickSource = opCtx->getServiceContext()->getTickSource();
-        const bool isCommittingWithPrepare = o().txnState.isCommittingWithPrepare();
         stdx::lock_guard<Client> lk(*opCtx->getClient());
         o(lk).txnState.transitionTo(TransactionState::kCommitted);
 
@@ -1301,8 +1300,7 @@ void TransactionParticipant::Participant::_finishCommitTransaction(OperationCont
                                                   tickSource,
                                                   p().oldestOplogEntryOpTime,
                                                   p().finishOpTime,
-                                                  &Top::get(getGlobalServiceContext()),
-                                                  isCommittingWithPrepare);
+                                                  &Top::get(getGlobalServiceContext()));
         o(lk).transactionMetricsObserver.onTransactionOperation(
             opCtx, CurOp::get(opCtx)->debug().additiveMetrics, o().txnState.isPrepared());
     }
@@ -1455,8 +1453,7 @@ void TransactionParticipant::Participant::_abortTransactionOnSession(OperationCo
             tickSource,
             p().oldestOplogEntryOpTime,
             p().finishOpTime,
-            &Top::get(opCtx->getServiceContext()),
-            o().txnState.isPrepared());
+            &Top::get(opCtx->getServiceContext()));
     }
 
     if (o().txnResourceStash) {
