@@ -3367,6 +3367,28 @@ TEST_F(TransactionsMetricsTest, LogTransactionInfoAfterSlowStashedAbort) {
     ASSERT_EQUALS(1, countLogLinesContaining(expectedTransactionInfo));
 }
 
+TEST_F(TransactionsMetricsTest, LogTransactionInfoVerbosityInfo) {
+    auto sessionCheckout = checkOutSession();
+
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+
+    txnParticipant.unstashTransactionResources(opCtx(), "commitTransaction");
+
+    // Set a high slow operation threshold to avoid the transaction being logged as slow.
+    serverGlobalParams.slowMS = 10000;
+
+    // Set verbosity level of transaction components to info.
+    logger::globalLogDomain()->setMinimumLoggedSeverity(logger::LogComponent::kTransaction,
+                                                        logger::LogSeverity::Info());
+
+    startCapturingLogMessages();
+    txnParticipant.commitUnpreparedTransaction(opCtx());
+    stopCapturingLogMessages();
+
+    // Test that the transaction is not logged.
+    ASSERT_EQUALS(0, countLogLinesContaining("transaction parameters"));
+}
+
 TEST_F(TransactionsMetricsTest, LogTransactionInfoVerbosityDebug) {
     auto sessionCheckout = checkOutSession();
 
@@ -3375,7 +3397,7 @@ TEST_F(TransactionsMetricsTest, LogTransactionInfoVerbosityDebug) {
     txnParticipant.unstashTransactionResources(opCtx(), "commitTransaction");
 
     // Set a high slow operation threshold to avoid the transaction being logged as slow.
-    serverGlobalParams.slowMS = 1000;
+    serverGlobalParams.slowMS = 10000;
 
     // Set verbosity level of transaction components to debug.
     logger::globalLogDomain()->setMinimumLoggedSeverity(logger::LogComponent::kTransaction,
@@ -3385,11 +3407,11 @@ TEST_F(TransactionsMetricsTest, LogTransactionInfoVerbosityDebug) {
     txnParticipant.commitUnpreparedTransaction(opCtx());
     stopCapturingLogMessages();
 
-    // Rset verbosity level of transaction components.
+    // Reset verbosity level of transaction components.
     logger::globalLogDomain()->setMinimumLoggedSeverity(logger::LogComponent::kTransaction,
                                                         logger::LogSeverity::Info());
 
-    // Test that transaction is still logged.
+    // Test that the transaction is still logged.
     ASSERT_EQUALS(1, countLogLinesContaining("transaction parameters"));
 }
 
