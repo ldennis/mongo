@@ -367,6 +367,7 @@ void IdempotencyTest::testOpsAreIdempotent(std::vector<OplogEntry> ops, Sequence
     ASSERT_OK(resetState());
     ASSERT_OK(runOpsInitialSync(ops));
     auto state1 = validate();
+    auto txnState1 = validate(NamespaceString::kSessionTransactionsTableNamespace);
     auto iterations = sequenceType == SequenceType::kEntireSequence ? 1 : ops.size();
 
     for (std::size_t i = 0; i < iterations; i++) {
@@ -394,8 +395,12 @@ void IdempotencyTest::testOpsAreIdempotent(std::vector<OplogEntry> ops, Sequence
         }
 
         auto state2 = validate();
+        auto txnState2 = validate(NamespaceString::kSessionTransactionsTableNamespace);
         if (state1 != state2) {
             FAIL(getStateString(state1, state2, fullSequence));
+        }
+        if (txnState1 != txnState2) {
+            FAIL(getStateString(txnState1, txnState2, fullSequence));
         }
     }
 }
@@ -512,9 +517,9 @@ std::string IdempotencyTest::computeDataHash(Collection* collection) {
     return digestToString(d);
 }
 
-CollectionState IdempotencyTest::validate() {
+CollectionState IdempotencyTest::validate(const NamespaceString& inNss) {
     auto collUUID = [&]() -> OptionalCollectionUUID {
-        AutoGetCollectionForReadCommand autoColl(_opCtx.get(), nss);
+        AutoGetCollectionForReadCommand autoColl(_opCtx.get(), inNss);
         if (auto collection = autoColl.getCollection()) {
             return collection->uuid();
         }
@@ -527,7 +532,7 @@ CollectionState IdempotencyTest::validate() {
             ->awaitNoIndexBuildInProgressForCollection(collUUID.get());
     }
 
-    AutoGetCollectionForReadCommand autoColl(_opCtx.get(), nss);
+    AutoGetCollectionForReadCommand autoColl(_opCtx.get(), inNss);
     auto collection = autoColl.getCollection();
 
     if (!collection) {
@@ -538,8 +543,8 @@ CollectionState IdempotencyTest::validate() {
     ValidateResults validateResults;
     BSONObjBuilder bob;
 
-    Lock::DBLock lk(_opCtx.get(), nss.db(), MODE_IX);
-    auto lock = stdx::make_unique<Lock::CollectionLock>(_opCtx.get(), nss, MODE_X);
+    Lock::DBLock lk(_opCtx.get(), inNss.db(), MODE_IX);
+    auto lock = stdx::make_unique<Lock::CollectionLock>(_opCtx.get(), inNss, MODE_X);
     ASSERT_OK(collection->validate(
         _opCtx.get(), kValidateFull, false, std::move(lock), &validateResults, &bob));
     ASSERT_TRUE(validateResults.valid);

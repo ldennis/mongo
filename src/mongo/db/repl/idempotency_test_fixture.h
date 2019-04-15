@@ -136,7 +136,7 @@ protected:
     /**
      * Validate data and indexes. Return the MD5 hash of the documents ordered by _id.
      */
-    CollectionState validate();
+    CollectionState validate(const NamespaceString& inNss = NamespaceString("test.foo"));
 
     NamespaceString nss{"test.foo"};
 };
