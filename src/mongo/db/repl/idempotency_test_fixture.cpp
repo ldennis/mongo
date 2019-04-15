@@ -474,6 +474,16 @@ OplogEntry IdempotencyTest::commitPrepared(LogicalSessionId lsid,
     return uassertStatusOK(OplogEntry::parse(commitOp.toBSON()));
 }
 
+OplogEntry IdempotencyTest::abortPrepared(LogicalSessionId lsid,
+                                          TxnNumber txnNum,
+                                          StmtId stmtId,
+                                          OpTime prepareOpTime) {
+    auto abortOp = makeCommandOplogEntryWithSessionInfoAndStmtId(
+        nextOpTime(), nss, BSON("abortTransaction" << 1), lsid, txnNum, stmtId, prepareOpTime);
+    // This re-parse puts the abort op into a normalized form for comparison.
+    return uassertStatusOK(OplogEntry::parse(abortOp.toBSON()));
+}
+
 std::string IdempotencyTest::computeDataHash(Collection* collection) {
     auto desc = collection->getIndexCatalog()->findIdIndex(_opCtx.get());
     ASSERT_TRUE(desc);

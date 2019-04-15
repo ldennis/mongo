@@ -106,6 +106,10 @@ protected:
                               TxnNumber txnNum,
                               StmtId stmtId,
                               OpTime prepareOpTime);
+    OplogEntry abortPrepared(LogicalSessionId lsid,
+                             TxnNumber txnNum,
+                             StmtId stmtId,
+                             OpTime prepareOpTime);
     virtual Status resetState();
 
     /**

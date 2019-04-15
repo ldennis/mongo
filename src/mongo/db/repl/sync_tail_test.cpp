@@ -2812,6 +2812,57 @@ TEST_F(IdempotencyTest, CommitPreparedTransasction) {
                         boost::none,
                         DurableTxnStateEnum::kCommitted);
 }
+
+TEST_F(IdempotencyTest, AbortPreparedTransasction) {
+    // TODO: SERVER-36492 Fix this test
+    return;
+    createCollectionWithUuid(_opCtx.get(), NamespaceString::kSessionTransactionsTableNamespace);
+    auto uuid = createCollectionWithUuid(_opCtx.get(), nss);
+    auto lsid = makeLogicalSessionId(_opCtx.get());
+    TxnNumber txnNum(0);
+
+    auto prepareOp = prepareInsert(lsid, txnNum, StmtId(0), fromjson("{_id: 1}"), uuid);
+    auto abortOp = abortPrepared(lsid, txnNum, StmtId(1), prepareOp.getOpTime());
+
+    ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
+                  ->setFollowerMode(MemberState::RS_RECOVERING));
+
+    auto writerPool = OplogApplier::makeWriterPool();
+    SyncTail syncTail(nullptr,
+                      getConsistencyMarkers(),
+                      getStorageInterface(),
+                      multiSyncApply,
+                      writerPool.get(),
+                      SyncTailTest::makeInitialSyncOptions());
+
+    ASSERT_OK(syncTail.multiApply(_opCtx.get(), {prepareOp}));
+    repl::checkTxnTable(_opCtx.get(),
+                        lsid,
+                        txnNum,
+                        prepareOp.getOpTime(),
+                        *prepareOp.getWallClockTime(),
+                        prepareOp.getOpTime(),
+                        DurableTxnStateEnum::kPrepared);
+
+    ASSERT_OK(syncTail.multiApply(_opCtx.get(), {abortOp}));
+    repl::checkTxnTable(_opCtx.get(),
+                        lsid,
+                        txnNum,
+                        abortOp.getOpTime(),
+                        *abortOp.getWallClockTime(),
+                        boost::none,
+                        DurableTxnStateEnum::kAborted);
+
+    auto ops = {prepareOp, abortOp};
+    testOpsAreIdempotent(ops);
+    repl::checkTxnTable(_opCtx.get(),
+                        lsid,
+                        txnNum,
+                        abortOp.getOpTime(),
+                        *abortOp.getWallClockTime(),
+                        boost::none,
+                        DurableTxnStateEnum::kAborted);
+}
 }  // namespace
 }  // namespace repl
 }  // namespace mongo
