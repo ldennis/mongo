@@ -2764,6 +2764,54 @@ TEST_F(IdempotencyTest, ConvertToCappedNamespaceNotFound) {
     ASSERT_FALSE(autoColl.getDb());
 }
 
+TEST_F(IdempotencyTest, CommitPreparedTransasction) {
+    createCollectionWithUuid(_opCtx.get(), NamespaceString::kSessionTransactionsTableNamespace);
+    auto uuid = createCollectionWithUuid(_opCtx.get(), nss);
+    auto lsid = makeLogicalSessionId(_opCtx.get());
+    TxnNumber txnNum(0);
+
+    auto prepareOp = prepareInsert(lsid, txnNum, StmtId(0), fromjson("{_id: 1}"), uuid);
+    auto commitOp = commitPrepared(lsid, txnNum, StmtId(1), prepareOp.getOpTime());
+
+    ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
+                  ->setFollowerMode(MemberState::RS_RECOVERING));
+
+    auto writerPool = OplogApplier::makeWriterPool();
+    SyncTail syncTail(nullptr,
+                      getConsistencyMarkers(),
+                      getStorageInterface(),
+                      multiSyncApply,
+                      writerPool.get(),
+                      SyncTailTest::makeInitialSyncOptions());
+
+    ASSERT_OK(syncTail.multiApply(_opCtx.get(), {prepareOp}));
+    repl::checkTxnTable(_opCtx.get(),
+                        lsid,
+                        txnNum,
+                        prepareOp.getOpTime(),
+                        *prepareOp.getWallClockTime(),
+                        prepareOp.getOpTime(),
+                        DurableTxnStateEnum::kPrepared);
+
+    ASSERT_OK(syncTail.multiApply(_opCtx.get(), {commitOp}));
+    repl::checkTxnTable(_opCtx.get(),
+                        lsid,
+                        txnNum,
+                        commitOp.getOpTime(),
+                        *commitOp.getWallClockTime(),
+                        boost::none,
+                        DurableTxnStateEnum::kCommitted);
+
+    auto ops = {prepareOp, commitOp};
+    testOpsAreIdempotent(ops);
+    repl::checkTxnTable(_opCtx.get(),
+                        lsid,
+                        txnNum,
+                        commitOp.getOpTime(),
+                        *commitOp.getWallClockTime(),
+                        boost::none,
+                        DurableTxnStateEnum::kCommitted);
+}
 }  // namespace
 }  // namespace repl
 }  // namespace mongo

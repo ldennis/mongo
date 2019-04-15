@@ -97,6 +97,15 @@ protected:
     OplogEntry update(IdType _id, const BSONObj& obj);
     OplogEntry buildIndex(const BSONObj& indexSpec, const BSONObj& options, const UUID& uuid);
     OplogEntry dropIndex(const std::string& indexName, const UUID& uuid);
+    OplogEntry prepareInsert(LogicalSessionId lsid,
+                             TxnNumber txnNum,
+                             StmtId stmtId,
+                             const BSONObj& obj,
+                             const UUID& uuid);
+    OplogEntry commitPrepared(LogicalSessionId lsid,
+                              TxnNumber txnNum,
+                              StmtId stmtId,
+                              OpTime prepareOpTime);
     virtual Status resetState();
 
     /**

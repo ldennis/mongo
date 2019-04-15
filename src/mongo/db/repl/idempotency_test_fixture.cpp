@@ -434,6 +434,46 @@ OplogEntry IdempotencyTest::dropIndex(const std::string& indexName, const UUID& 
     return makeCommandOplogEntry(nextOpTime(), nss, cmd, uuid);
 }
 
+OplogEntry IdempotencyTest::prepareInsert(
+    LogicalSessionId lsid, TxnNumber txnNum, StmtId stmtId, const BSONObj& obj, const UUID& uuid) {
+    auto prepareOp = makeCommandOplogEntryWithSessionInfoAndStmtId(
+        nextOpTime(),
+        nss,
+        BSON("applyOps" << BSON_ARRAY(BSON("op"
+                                           << "i"
+                                           << "ns"
+                                           << nss.toString()
+                                           << "ui"
+                                           << uuid
+                                           << "o"
+                                           << obj))
+                        << "prepare"
+                        << true),
+        lsid,
+        txnNum,
+        stmtId,
+        OpTime());
+    // This re-parse puts the prepare op into a normalized form for comparison.
+    return uassertStatusOK(
+        OplogEntry::parse(prepareOp.toBSON().addField(BSON("prepare" << true).firstElement())));
+}
+
+OplogEntry IdempotencyTest::commitPrepared(LogicalSessionId lsid,
+                                           TxnNumber txnNum,
+                                           StmtId stmtId,
+                                           OpTime prepareOpTime) {
+    auto commitOp = makeCommandOplogEntryWithSessionInfoAndStmtId(
+        nextOpTime(),
+        nss,
+        BSON("commitTransaction" << 1 << "commitTimestamp" << prepareOpTime.getTimestamp()),
+        lsid,
+        txnNum,
+        stmtId,
+        prepareOpTime);
+    // This re-parse puts the commit op into a normalized form for comparison.
+    return uassertStatusOK(OplogEntry::parse(commitOp.toBSON()));
+}
+
 std::string IdempotencyTest::computeDataHash(Collection* collection) {
     auto desc = collection->getIndexCatalog()->findIdIndex(_opCtx.get());
     ASSERT_TRUE(desc);
