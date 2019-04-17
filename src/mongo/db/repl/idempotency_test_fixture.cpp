@@ -75,7 +75,8 @@ repl::OplogEntry makeOplogEntry(repl::OpTime opTime,
                                 boost::optional<Date_t> wallClockTime = boost::none,
                                 boost::optional<StmtId> stmtId = boost::none,
                                 boost::optional<UUID> uuid = boost::none,
-                                boost::optional<OpTime> prevOpTime = boost::none) {
+                                boost::optional<OpTime> prevOpTime = boost::none,
+                                const boost::optional<bool> prepare = boost::none) {
     return repl::OplogEntry(opTime,                           // optime
                             boost::none,                      // hash
                             opType,                           // opType
@@ -89,10 +90,10 @@ repl::OplogEntry makeOplogEntry(repl::OpTime opTime,
                             boost::none,                      // upsert
                             wallClockTime,                    // wall clock time
                             stmtId,                           // statement id
-                            prevOpTime,    // optime of previous write within same transaction
-                            boost::none,   // pre-image optime
-                            boost::none,   // post-image optime
-                            boost::none);  // prepare
+                            prevOpTime,   // optime of previous write within same transaction
+                            boost::none,  // pre-image optime
+                            boost::none,  // post-image optime
+                            prepare);     // prepare
 }
 
 }  // namespace
@@ -439,28 +440,27 @@ OplogEntry IdempotencyTest::dropIndex(const std::string& indexName, const UUID& 
     return makeCommandOplogEntry(nextOpTime(), nss, cmd, uuid);
 }
 
-OplogEntry IdempotencyTest::prepareInsert(
-    LogicalSessionId lsid, TxnNumber txnNum, StmtId stmtId, const BSONObj& obj, const UUID& uuid) {
-    auto prepareOp = makeCommandOplogEntryWithSessionInfoAndStmtId(
-        nextOpTime(),
-        nss,
-        BSON("applyOps" << BSON_ARRAY(BSON("op"
-                                           << "i"
-                                           << "ns"
-                                           << nss.toString()
-                                           << "ui"
-                                           << uuid
-                                           << "o"
-                                           << obj))
-                        << "prepare"
-                        << true),
-        lsid,
-        txnNum,
-        stmtId,
-        OpTime());
+OplogEntry IdempotencyTest::prepare(LogicalSessionId lsid,
+                                    TxnNumber txnNum,
+                                    StmtId stmtId,
+                                    const BSONArray& ops) {
+    OperationSessionInfo info;
+    info.setSessionId(lsid);
+    info.setTxnNumber(txnNum);
+    auto prepareOp = makeOplogEntry(nextOpTime(),
+                                    OpTypeEnum::kCommand,
+                                    nss.getCommandNS(),
+                                    BSON("applyOps" << ops),
+                                    boost::none /* o2 */,
+                                    info /* sessionInfo */,
+                                    Date_t::min() /* wallClockTime -- required but not checked */,
+                                    stmtId,
+                                    boost::none /* uuid */,
+                                    OpTime(),
+                                    true);
+
     // This re-parse puts the prepare op into a normalized form for comparison.
-    return uassertStatusOK(
-        OplogEntry::parse(prepareOp.toBSON().addField(BSON("prepare" << true).firstElement())));
+    return uassertStatusOK(OplogEntry::parse(prepareOp.toBSON()));
 }
 
 OplogEntry IdempotencyTest::commitPrepared(LogicalSessionId lsid,

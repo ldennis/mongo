@@ -2770,7 +2770,18 @@ TEST_F(IdempotencyTest, CommitPreparedTransasction) {
     auto lsid = makeLogicalSessionId(_opCtx.get());
     TxnNumber txnNum(0);
 
-    auto prepareOp = prepareInsert(lsid, txnNum, StmtId(0), fromjson("{_id: 1}"), uuid);
+    auto prepareOp = prepare(lsid,
+                             txnNum,
+                             StmtId(0),
+                             BSON_ARRAY(BSON("op"
+                                             << "i"
+                                             << "ns"
+                                             << nss.toString()
+                                             << "ui"
+                                             << uuid
+                                             << "o"
+                                             << fromjson("{_id: 1}"))));
+
     auto commitOp = commitPrepared(lsid, txnNum, StmtId(1), prepareOp.getOpTime());
 
     ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
@@ -2821,7 +2832,17 @@ TEST_F(IdempotencyTest, AbortPreparedTransasction) {
     auto lsid = makeLogicalSessionId(_opCtx.get());
     TxnNumber txnNum(0);
 
-    auto prepareOp = prepareInsert(lsid, txnNum, StmtId(0), fromjson("{_id: 1}"), uuid);
+    auto prepareOp = prepare(lsid,
+                             txnNum,
+                             StmtId(0),
+                             BSON_ARRAY(BSON("op"
+                                             << "i"
+                                             << "ns"
+                                             << nss.toString()
+                                             << "ui"
+                                             << uuid
+                                             << "o"
+                                             << fromjson("{_id: 1}"))));
     auto abortOp = abortPrepared(lsid, txnNum, StmtId(1), prepareOp.getOpTime());
 
     ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
