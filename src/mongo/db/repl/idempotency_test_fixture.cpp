@@ -40,6 +40,7 @@
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/database_holder.h"
 #include "mongo/db/catalog/index_catalog.h"
+#include "mongo/db/catalog/uuid_catalog.h"
 #include "mongo/db/client.h"
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/concurrency/write_conflict_exception.h"
@@ -386,8 +387,7 @@ void IdempotencyTest::testOpsAreIdempotent(std::vector<OplogEntry> ops, Sequence
     syncTail.fillWriterVectors(_opCtx.get(), &ops, &writerVectors, &derivedOps);
 
     ASSERT_OK(runOptrsInitialSync(writerVectors[0]));
-    auto state1 = validate();
-    auto txnState1 = validate(NamespaceString::kSessionTransactionsTableNamespace);
+    auto state1 = validateAllCollections();
     auto iterations = sequenceType == SequenceType::kEntireSequence ? 1 : ops.size();
 
     for (std::size_t i = 0; i < iterations; i++) {
@@ -414,13 +414,9 @@ void IdempotencyTest::testOpsAreIdempotent(std::vector<OplogEntry> ops, Sequence
             fullSequence.insert(fullSequence.end(), suffix.begin(), suffix.end());
         }
 
-        auto state2 = validate();
-        auto txnState2 = validate(NamespaceString::kSessionTransactionsTableNamespace);
+        auto state2 = validateAllCollections();
         if (state1 != state2) {
-            FAIL(getStateString(state1, state2, fullSequence));
-        }
-        if (txnState1 != txnState2) {
-            FAIL(getStateString(txnState1, txnState2, fullSequence));
+            FAIL(getStateVectorString(state1, state2, fullSequence));
         }
     }
 }
@@ -536,9 +532,23 @@ std::string IdempotencyTest::computeDataHash(Collection* collection) {
     return digestToString(d);
 }
 
-CollectionState IdempotencyTest::validate(const NamespaceString& inNss) {
+std::vector<CollectionState> IdempotencyTest::validateAllCollections() {
+    std::vector<CollectionState> collStates;
+    auto& uuidCatalog = UUIDCatalog::get(_opCtx.get());
+    auto dbs = uuidCatalog.getAllDbNames();
+    for (auto& db : dbs) {
+        if (db != "local") {
+            for (const auto& nss : uuidCatalog.getAllCollectionNamesFromDb(db)) {
+                collStates.push_back(validate(nss));
+            }
+        }
+    }
+    return collStates;
+}
+
+CollectionState IdempotencyTest::validate(const NamespaceString& nss) {
     auto collUUID = [&]() -> OptionalCollectionUUID {
-        AutoGetCollectionForReadCommand autoColl(_opCtx.get(), inNss);
+        AutoGetCollectionForReadCommand autoColl(_opCtx.get(), nss);
         if (auto collection = autoColl.getCollection()) {
             return collection->uuid();
         }
@@ -551,7 +561,7 @@ CollectionState IdempotencyTest::validate(const NamespaceString& inNss) {
             ->awaitNoIndexBuildInProgressForCollection(collUUID.get());
     }
 
-    AutoGetCollectionForReadCommand autoColl(_opCtx.get(), inNss);
+    AutoGetCollectionForReadCommand autoColl(_opCtx.get(), nss);
     auto collection = autoColl.getCollection();
 
     if (!collection) {
@@ -562,8 +572,8 @@ CollectionState IdempotencyTest::validate(const NamespaceString& inNss) {
     ValidateResults validateResults;
     BSONObjBuilder bob;
 
-    Lock::DBLock lk(_opCtx.get(), inNss.db(), MODE_IX);
-    auto lock = stdx::make_unique<Lock::CollectionLock>(_opCtx.get(), inNss, MODE_X);
+    Lock::DBLock lk(_opCtx.get(), nss.db(), MODE_IX);
+    auto lock = stdx::make_unique<Lock::CollectionLock>(_opCtx.get(), nss, MODE_X);
     ASSERT_OK(collection->validate(
         _opCtx.get(), kValidateFull, false, std::move(lock), &validateResults, &bob));
     ASSERT_TRUE(validateResults.valid);
@@ -591,6 +601,22 @@ std::string IdempotencyTest::getStateString(const CollectionState& state1,
     StringBuilder sb;
     sb << "The state: " << state1 << " does not match with the state: " << state2
        << " found after applying the operations a second time, therefore breaking idempotency.";
+    return sb.str();
+}
+
+std::string IdempotencyTest::getStateVectorString(std::vector<CollectionState>& state1,
+                                                  std::vector<CollectionState>& state2,
+                                                  const std::vector<OplogEntry>& ops) {
+    StringBuilder sb;
+    sb << "The state: ";
+    for (const auto& s : state1) {
+        sb << s << " ";
+    }
+    sb << "does not match with the state: ";
+    for (const auto& s : state2) {
+        sb << s << " ";
+    }
+    sb << " found after applying the operations a second time, therefore breaking idempotency.";
     return sb.str();
 }
 

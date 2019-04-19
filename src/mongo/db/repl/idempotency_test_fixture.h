@@ -132,10 +132,15 @@ protected:
     virtual std::string getStateString(const CollectionState& state1,
                                        const CollectionState& state2,
                                        const std::vector<OplogEntry>& ops);
+
+    virtual std::string getStateVectorString(std::vector<CollectionState>& state1,
+                                             std::vector<CollectionState>& state2,
+                                             const std::vector<OplogEntry>& ops);
     /**
      * Validate data and indexes. Return the MD5 hash of the documents ordered by _id.
      */
     CollectionState validate(const NamespaceString& inNss = NamespaceString("test.foo"));
+    std::vector<CollectionState> validateAllCollections();
 
     NamespaceString nss{"test.foo"};
 };
