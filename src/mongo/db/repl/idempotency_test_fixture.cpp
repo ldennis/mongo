@@ -366,7 +366,26 @@ Status IdempotencyTest::resetState() {
 
 void IdempotencyTest::testOpsAreIdempotent(std::vector<OplogEntry> ops, SequenceType sequenceType) {
     ASSERT_OK(resetState());
-    ASSERT_OK(runOpsInitialSync(ops));
+
+    for (auto&& entry : ops) {
+        ASSERT_OK(getStorageInterface()->insertDocument(
+            _opCtx.get(),
+            NamespaceString::kRsOplogNamespace,
+            {entry.toBSON(), entry.getOpTime().getTimestamp()},
+            entry.getOpTime().getTerm()));
+    }
+
+    SyncTail syncTail(nullptr,  // observer
+                      nullptr,  // consistency markers
+                      nullptr,  // storage interface
+                      SyncTail::MultiSyncApplyFunc(),
+                      nullptr,  // writer pool
+                      SyncTailTest::makeInitialSyncOptions());
+    std::vector<MultiApplier::OperationPtrs> writerVectors(1);
+    std::vector<MultiApplier::Operations> derivedOps;
+    syncTail.fillWriterVectors(_opCtx.get(), &ops, &writerVectors, &derivedOps);
+
+    ASSERT_OK(runOptrsInitialSync(writerVectors[0]));
     auto state1 = validate();
     auto txnState1 = validate(NamespaceString::kSessionTransactionsTableNamespace);
     auto iterations = sequenceType == SequenceType::kEntireSequence ? 1 : ops.size();
@@ -376,22 +395,22 @@ void IdempotencyTest::testOpsAreIdempotent(std::vector<OplogEntry> ops, Sequence
         std::vector<OplogEntry> fullSequence;
 
         if (sequenceType == SequenceType::kEntireSequence) {
-            ASSERT_OK(runOpsInitialSync(ops));
+            ASSERT_OK(runOptrsInitialSync(writerVectors[0]));
             fullSequence.insert(fullSequence.end(), ops.begin(), ops.end());
         } else if (sequenceType == SequenceType::kAnyPrefix ||
                    sequenceType == SequenceType::kAnyPrefixOrSuffix) {
             std::vector<OplogEntry> prefix(ops.begin(), ops.begin() + i + 1);
-            ASSERT_OK(runOpsInitialSync(prefix));
+            ASSERT_OK(runOptrsInitialSync(writerVectors[0]));
             fullSequence.insert(fullSequence.end(), prefix.begin(), prefix.end());
         }
 
-        ASSERT_OK(runOpsInitialSync(ops));
+        ASSERT_OK(runOptrsInitialSync(writerVectors[0]));
         fullSequence.insert(fullSequence.end(), ops.begin(), ops.end());
 
         if (sequenceType == SequenceType::kAnySuffix ||
             sequenceType == SequenceType::kAnyPrefixOrSuffix) {
             std::vector<OplogEntry> suffix(ops.begin() + i, ops.end());
-            ASSERT_OK(runOpsInitialSync(suffix));
+            ASSERT_OK(runOptrsInitialSync(writerVectors[0]));
             fullSequence.insert(fullSequence.end(), suffix.begin(), suffix.end());
         }
 
@@ -578,5 +597,15 @@ std::string IdempotencyTest::getStateString(const CollectionState& state1,
 template OplogEntry IdempotencyTest::update<int>(int _id, const BSONObj& obj);
 template OplogEntry IdempotencyTest::update<const char*>(char const* _id, const BSONObj& obj);
 
+BSONObj makeInsertApplyOpsEntry(const NamespaceString& nss, const UUID& uuid, const BSONObj& doc) {
+    return BSON("op"
+                << "i"
+                << "ns"
+                << nss.toString()
+                << "ui"
+                << uuid
+                << "o"
+                << doc);
+}
 }  // namespace repl
 }  // namespace mongo

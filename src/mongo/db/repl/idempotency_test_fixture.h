@@ -191,5 +191,7 @@ OplogEntry makeInsertDocumentOplogEntryWithSessionInfoAndStmtId(
     TxnNumber txnNum,
     StmtId stmtId,
     boost::optional<OpTime> prevOpTime = boost::none);
+
+BSONObj makeInsertApplyOpsEntry(const NamespaceString& nss, const UUID& uuid, const BSONObj& doc);
 }  // namespace repl
 }  // namespace mongo

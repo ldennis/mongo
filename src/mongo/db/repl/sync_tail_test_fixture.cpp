@@ -249,6 +249,28 @@ Status SyncTailTest::runOpsInitialSync(std::vector<OplogEntry> ops) {
     return Status::OK();
 }
 
+Status SyncTailTest::runOptrsInitialSync(MultiApplier::OperationPtrs ops) {
+    auto options = makeInitialSyncOptions();
+    SyncTail syncTail(nullptr,
+                      getConsistencyMarkers(),
+                      getStorageInterface(),
+                      SyncTail::MultiSyncApplyFunc(),
+                      nullptr,
+                      options);
+    // Apply each operation in a batch of one because 'ops' may contain a mix of commands and CRUD
+    // operations provided by idempotency tests.
+    for (auto& op : ops) {
+        MultiApplier::OperationPtrs opsPtrs;
+        opsPtrs.push_back(op);
+        WorkerMultikeyPathInfo pathInfo;
+        auto status = multiSyncApply(_opCtx.get(), &opsPtrs, &syncTail, &pathInfo);
+        if (!status.isOK()) {
+            return status;
+        }
+    }
+    return Status::OK();
+}
+
 void checkTxnTable(OperationContext* opCtx,
                    const LogicalSessionId& lsid,
                    const TxnNumber& txnNum,

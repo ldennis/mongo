@@ -2773,38 +2773,15 @@ TEST_F(IdempotencyTest, CommitPreparedTransasction) {
     auto prepareOp = prepare(lsid,
                              txnNum,
                              StmtId(0),
-                             BSON_ARRAY(BSON("op"
-                                             << "i"
-                                             << "ns"
-                                             << nss.toString()
-                                             << "ui"
-                                             << uuid
-                                             << "o"
-                                             << fromjson("{_id: 1}"))));
+                             BSON_ARRAY(makeInsertApplyOpsEntry(nss, uuid, fromjson("{_id: 1}"))));
 
     auto commitOp = commitPrepared(lsid, txnNum, StmtId(1), prepareOp.getOpTime());
 
     ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
                   ->setFollowerMode(MemberState::RS_RECOVERING));
 
-    auto writerPool = OplogApplier::makeWriterPool();
-    SyncTail syncTail(nullptr,
-                      getConsistencyMarkers(),
-                      getStorageInterface(),
-                      multiSyncApply,
-                      writerPool.get(),
-                      SyncTailTest::makeInitialSyncOptions());
-
-    ASSERT_OK(syncTail.multiApply(_opCtx.get(), {prepareOp}));
-    repl::checkTxnTable(_opCtx.get(),
-                        lsid,
-                        txnNum,
-                        prepareOp.getOpTime(),
-                        *prepareOp.getWallClockTime(),
-                        prepareOp.getOpTime(),
-                        DurableTxnStateEnum::kPrepared);
-
-    ASSERT_OK(syncTail.multiApply(_opCtx.get(), {commitOp}));
+    auto ops = {prepareOp, commitOp};
+    testOpsAreIdempotent(ops);
     repl::checkTxnTable(_opCtx.get(),
                         lsid,
                         txnNum,
@@ -2812,6 +2789,34 @@ TEST_F(IdempotencyTest, CommitPreparedTransasction) {
                         *commitOp.getWallClockTime(),
                         boost::none,
                         DurableTxnStateEnum::kCommitted);
+}
+
+TEST_F(IdempotencyTest, CommitPreparedTransasctionDataPartiallyApplied) {
+    createCollectionWithUuid(_opCtx.get(), NamespaceString::kSessionTransactionsTableNamespace);
+    auto uuid = createCollectionWithUuid(_opCtx.get(), nss);
+    auto lsid = makeLogicalSessionId(_opCtx.get());
+    TxnNumber txnNum(0);
+
+    NamespaceString nss2("test.coll2");
+    auto uuid2 = createCollectionWithUuid(_opCtx.get(), nss2);
+
+    auto prepareOp =
+        prepare(lsid,
+                txnNum,
+                StmtId(0),
+                BSON_ARRAY(makeInsertApplyOpsEntry(nss, uuid, fromjson("{_id: 1}"))
+                           << makeInsertApplyOpsEntry(nss2, uuid2, fromjson("{_id: 1}"))));
+
+    auto commitOp = commitPrepared(lsid, txnNum, StmtId(1), prepareOp.getOpTime());
+
+    ASSERT_OK(getStorageInterface()->insertDocument(
+        _opCtx.get(),
+        nss,
+        {fromjson("{_id: 1}"), commitOp.getOpTime().getTimestamp()},
+        commitOp.getOpTime().getTerm()));
+
+    ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
+                  ->setFollowerMode(MemberState::RS_RECOVERING));
 
     auto ops = {prepareOp, commitOp};
     testOpsAreIdempotent(ops);
@@ -2835,44 +2840,11 @@ TEST_F(IdempotencyTest, AbortPreparedTransasction) {
     auto prepareOp = prepare(lsid,
                              txnNum,
                              StmtId(0),
-                             BSON_ARRAY(BSON("op"
-                                             << "i"
-                                             << "ns"
-                                             << nss.toString()
-                                             << "ui"
-                                             << uuid
-                                             << "o"
-                                             << fromjson("{_id: 1}"))));
+                             BSON_ARRAY(makeInsertApplyOpsEntry(nss, uuid, fromjson("{_id: 1}"))));
     auto abortOp = abortPrepared(lsid, txnNum, StmtId(1), prepareOp.getOpTime());
 
     ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
                   ->setFollowerMode(MemberState::RS_RECOVERING));
-
-    auto writerPool = OplogApplier::makeWriterPool();
-    SyncTail syncTail(nullptr,
-                      getConsistencyMarkers(),
-                      getStorageInterface(),
-                      multiSyncApply,
-                      writerPool.get(),
-                      SyncTailTest::makeInitialSyncOptions());
-
-    ASSERT_OK(syncTail.multiApply(_opCtx.get(), {prepareOp}));
-    repl::checkTxnTable(_opCtx.get(),
-                        lsid,
-                        txnNum,
-                        prepareOp.getOpTime(),
-                        *prepareOp.getWallClockTime(),
-                        prepareOp.getOpTime(),
-                        DurableTxnStateEnum::kPrepared);
-
-    ASSERT_OK(syncTail.multiApply(_opCtx.get(), {abortOp}));
-    repl::checkTxnTable(_opCtx.get(),
-                        lsid,
-                        txnNum,
-                        abortOp.getOpTime(),
-                        *abortOp.getWallClockTime(),
-                        boost::none,
-                        DurableTxnStateEnum::kAborted);
 
     auto ops = {prepareOp, abortOp};
     testOpsAreIdempotent(ops);
