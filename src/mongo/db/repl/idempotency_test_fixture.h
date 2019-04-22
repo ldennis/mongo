@@ -143,7 +143,7 @@ protected:
     /**
      * Validate data and indexes. Return the MD5 hash of the documents ordered by _id.
      */
-    CollectionState validate(const NamespaceString& inNss = NamespaceString("test.foo"));
+    CollectionState validate(const NamespaceString& nss = NamespaceString("test.foo"));
     std::vector<CollectionState> validateAllCollections();
 
     NamespaceString nss{"test.foo"};

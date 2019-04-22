@@ -368,6 +368,7 @@ Status IdempotencyTest::resetState() {
 void IdempotencyTest::testOpsAreIdempotent(std::vector<OplogEntry> ops, SequenceType sequenceType) {
     ASSERT_OK(resetState());
 
+    // Write oplog entries to oplog collection.
     for (auto&& entry : ops) {
         ASSERT_OK(getStorageInterface()->insertDocument(
             _opCtx.get(),
@@ -384,6 +385,7 @@ void IdempotencyTest::testOpsAreIdempotent(std::vector<OplogEntry> ops, Sequence
                       SyncTailTest::makeInitialSyncOptions());
     std::vector<MultiApplier::OperationPtrs> writerVectors(1);
     std::vector<MultiApplier::Operations> derivedOps;
+    // Derive ops for transactions if necessary.
     syncTail.fillWriterVectors(_opCtx.get(), &ops, &writerVectors, &derivedOps);
 
     ASSERT_OK(runOptrsInitialSync(writerVectors[0]));
@@ -462,20 +464,17 @@ OplogEntry IdempotencyTest::prepare(LogicalSessionId lsid,
     OperationSessionInfo info;
     info.setSessionId(lsid);
     info.setTxnNumber(txnNum);
-    auto prepareOp = makeOplogEntry(nextOpTime(),
-                                    OpTypeEnum::kCommand,
-                                    nss.getCommandNS(),
-                                    BSON("applyOps" << ops),
-                                    boost::none /* o2 */,
-                                    info /* sessionInfo */,
-                                    Date_t::min() /* wallClockTime -- required but not checked */,
-                                    stmtId,
-                                    boost::none /* uuid */,
-                                    OpTime(),
-                                    true);
-
-    // This re-parse puts the prepare op into a normalized form for comparison.
-    return uassertStatusOK(OplogEntry::parse(prepareOp.toBSON()));
+    return makeOplogEntry(nextOpTime(),
+                          OpTypeEnum::kCommand,
+                          nss.getCommandNS(),
+                          BSON("applyOps" << ops),
+                          boost::none /* o2 */,
+                          info /* sessionInfo */,
+                          Date_t::min() /* wallClockTime -- required but not checked */,
+                          stmtId,
+                          boost::none /* uuid */,
+                          OpTime(),
+                          true);
 }
 
 OplogEntry IdempotencyTest::commitUnprepared(LogicalSessionId lsid,
@@ -485,27 +484,24 @@ OplogEntry IdempotencyTest::commitUnprepared(LogicalSessionId lsid,
     OperationSessionInfo info;
     info.setSessionId(lsid);
     info.setTxnNumber(txnNum);
-    auto commitOp = makeOplogEntry(nextOpTime(),
-                                   OpTypeEnum::kCommand,
-                                   nss.getCommandNS(),
-                                   BSON("applyOps" << ops << "commitTransaction" << 1),
-                                   boost::none /* o2 */,
-                                   info /* sessionInfo */,
-                                   Date_t::min() /* wallClockTime -- required but not checked */,
-                                   stmtId,
-                                   boost::none /* uuid */,
-                                   OpTime(),
-                                   false);
-
-    // This re-parse puts the commit op into a normalized form for comparison.
-    return uassertStatusOK(OplogEntry::parse(commitOp.toBSON()));
+    return makeOplogEntry(nextOpTime(),
+                          OpTypeEnum::kCommand,
+                          nss.getCommandNS(),
+                          BSON("applyOps" << ops << "commitTransaction" << 1),
+                          boost::none /* o2 */,
+                          info /* sessionInfo */,
+                          Date_t::min() /* wallClockTime -- required but not checked */,
+                          stmtId,
+                          boost::none /* uuid */,
+                          OpTime(),
+                          false);
 }
 
 OplogEntry IdempotencyTest::commitPrepared(LogicalSessionId lsid,
                                            TxnNumber txnNum,
                                            StmtId stmtId,
                                            OpTime prepareOpTime) {
-    auto commitOp = makeCommandOplogEntryWithSessionInfoAndStmtId(
+    return makeCommandOplogEntryWithSessionInfoAndStmtId(
         nextOpTime(),
         nss,
         BSON("commitTransaction" << 1 << "commitTimestamp" << prepareOpTime.getTimestamp()),
@@ -513,18 +509,14 @@ OplogEntry IdempotencyTest::commitPrepared(LogicalSessionId lsid,
         txnNum,
         stmtId,
         prepareOpTime);
-    // This re-parse puts the commit op into a normalized form for comparison.
-    return uassertStatusOK(OplogEntry::parse(commitOp.toBSON()));
 }
 
 OplogEntry IdempotencyTest::abortPrepared(LogicalSessionId lsid,
                                           TxnNumber txnNum,
                                           StmtId stmtId,
                                           OpTime prepareOpTime) {
-    auto abortOp = makeCommandOplogEntryWithSessionInfoAndStmtId(
+    return makeCommandOplogEntryWithSessionInfoAndStmtId(
         nextOpTime(), nss, BSON("abortTransaction" << 1), lsid, txnNum, stmtId, prepareOpTime);
-    // This re-parse puts the abort op into a normalized form for comparison.
-    return uassertStatusOK(OplogEntry::parse(abortOp.toBSON()));
 }
 
 std::string IdempotencyTest::computeDataHash(Collection* collection) {
@@ -560,6 +552,7 @@ std::vector<CollectionState> IdempotencyTest::validateAllCollections() {
     auto& uuidCatalog = UUIDCatalog::get(_opCtx.get());
     auto dbs = uuidCatalog.getAllDbNames();
     for (auto& db : dbs) {
+        // Skip local database.
         if (db != "local") {
             for (const auto& nss : uuidCatalog.getAllCollectionNamesFromDb(db)) {
                 collStates.push_back(validate(nss));
