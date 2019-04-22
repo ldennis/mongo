@@ -478,6 +478,29 @@ OplogEntry IdempotencyTest::prepare(LogicalSessionId lsid,
     return uassertStatusOK(OplogEntry::parse(prepareOp.toBSON()));
 }
 
+OplogEntry IdempotencyTest::commitUnprepared(LogicalSessionId lsid,
+                                             TxnNumber txnNum,
+                                             StmtId stmtId,
+                                             const BSONArray& ops) {
+    OperationSessionInfo info;
+    info.setSessionId(lsid);
+    info.setTxnNumber(txnNum);
+    auto commitOp = makeOplogEntry(nextOpTime(),
+                                   OpTypeEnum::kCommand,
+                                   nss.getCommandNS(),
+                                   BSON("applyOps" << ops << "commitTransaction" << 1),
+                                   boost::none /* o2 */,
+                                   info /* sessionInfo */,
+                                   Date_t::min() /* wallClockTime -- required but not checked */,
+                                   stmtId,
+                                   boost::none /* uuid */,
+                                   OpTime(),
+                                   false);
+
+    // This re-parse puts the commit op into a normalized form for comparison.
+    return uassertStatusOK(OplogEntry::parse(commitOp.toBSON()));
+}
+
 OplogEntry IdempotencyTest::commitPrepared(LogicalSessionId lsid,
                                            TxnNumber txnNum,
                                            StmtId stmtId,

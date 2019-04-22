@@ -2764,6 +2764,68 @@ TEST_F(IdempotencyTest, ConvertToCappedNamespaceNotFound) {
     ASSERT_FALSE(autoColl.getDb());
 }
 
+TEST_F(IdempotencyTest, CommitUnpreparedTransasction) {
+    createCollectionWithUuid(_opCtx.get(), NamespaceString::kSessionTransactionsTableNamespace);
+    auto uuid = createCollectionWithUuid(_opCtx.get(), nss);
+    auto lsid = makeLogicalSessionId(_opCtx.get());
+    TxnNumber txnNum(0);
+
+    auto commitOp =
+        commitUnprepared(lsid,
+                         txnNum,
+                         StmtId(0),
+                         BSON_ARRAY(makeInsertApplyOpsEntry(nss, uuid, fromjson("{_id: 1}"))));
+
+    ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
+                  ->setFollowerMode(MemberState::RS_RECOVERING));
+
+    testOpsAreIdempotent({commitOp});
+    repl::checkTxnTable(_opCtx.get(),
+                        lsid,
+                        txnNum,
+                        commitOp.getOpTime(),
+                        *commitOp.getWallClockTime(),
+                        boost::none,
+                        DurableTxnStateEnum::kCommitted);
+}
+
+TEST_F(IdempotencyTest, CommitUnpreparedTransasctionDataPartiallyApplied) {
+    createCollectionWithUuid(_opCtx.get(), NamespaceString::kSessionTransactionsTableNamespace);
+    auto uuid = createCollectionWithUuid(_opCtx.get(), nss);
+    auto lsid = makeLogicalSessionId(_opCtx.get());
+    TxnNumber txnNum(0);
+
+    NamespaceString nss2("test.coll2");
+    auto uuid2 = createCollectionWithUuid(_opCtx.get(), nss2);
+
+    auto commitOp =
+        commitUnprepared(lsid,
+                         txnNum,
+                         StmtId(0),
+                         BSON_ARRAY(makeInsertApplyOpsEntry(nss, uuid, fromjson("{_id: 1}"))
+                                    << makeInsertApplyOpsEntry(nss2, uuid2, fromjson("{_id: 1}"))));
+
+    // Manually insert one of the documents so that the data will partially reflect the transaction
+    // when the commitTransaction oplog entry is applied during initial sync.
+    ASSERT_OK(getStorageInterface()->insertDocument(
+        _opCtx.get(),
+        nss,
+        {fromjson("{_id: 1}"), commitOp.getOpTime().getTimestamp()},
+        commitOp.getOpTime().getTerm()));
+
+    ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
+                  ->setFollowerMode(MemberState::RS_RECOVERING));
+
+    testOpsAreIdempotent({commitOp});
+    repl::checkTxnTable(_opCtx.get(),
+                        lsid,
+                        txnNum,
+                        commitOp.getOpTime(),
+                        *commitOp.getWallClockTime(),
+                        boost::none,
+                        DurableTxnStateEnum::kCommitted);
+}
+
 TEST_F(IdempotencyTest, CommitPreparedTransasction) {
     createCollectionWithUuid(_opCtx.get(), NamespaceString::kSessionTransactionsTableNamespace);
     auto uuid = createCollectionWithUuid(_opCtx.get(), nss);
@@ -2780,8 +2842,7 @@ TEST_F(IdempotencyTest, CommitPreparedTransasction) {
     ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
                   ->setFollowerMode(MemberState::RS_RECOVERING));
 
-    auto ops = {prepareOp, commitOp};
-    testOpsAreIdempotent(ops);
+    testOpsAreIdempotent({prepareOp, commitOp});
     repl::checkTxnTable(_opCtx.get(),
                         lsid,
                         txnNum,
@@ -2809,6 +2870,8 @@ TEST_F(IdempotencyTest, CommitPreparedTransasctionDataPartiallyApplied) {
 
     auto commitOp = commitPrepared(lsid, txnNum, StmtId(1), prepareOp.getOpTime());
 
+    // Manually insert one of the documents so that the data will partially reflect the transaction
+    // when the commitTransaction oplog entry is applied during initial sync.
     ASSERT_OK(getStorageInterface()->insertDocument(
         _opCtx.get(),
         nss,
@@ -2818,8 +2881,7 @@ TEST_F(IdempotencyTest, CommitPreparedTransasctionDataPartiallyApplied) {
     ASSERT_OK(ReplicationCoordinator::get(getGlobalServiceContext())
                   ->setFollowerMode(MemberState::RS_RECOVERING));
 
-    auto ops = {prepareOp, commitOp};
-    testOpsAreIdempotent(ops);
+    testOpsAreIdempotent({prepareOp, commitOp});
     repl::checkTxnTable(_opCtx.get(),
                         lsid,
                         txnNum,

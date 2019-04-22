@@ -101,6 +101,10 @@ protected:
                        TxnNumber txnNum,
                        StmtId stmtId,
                        const BSONArray& ops);
+    OplogEntry commitUnprepared(LogicalSessionId lsid,
+                                TxnNumber txnNum,
+                                StmtId stmtId,
+                                const BSONArray& ops);
     OplogEntry commitPrepared(LogicalSessionId lsid,
                               TxnNumber txnNum,
                               StmtId stmtId,
