@@ -17,7 +17,7 @@
     const doc = {_id: 1, a: 1, b: 1};
     assert.commandWorked(testColl.insert(doc));
 
-    const session = db.getMongo().startSession({causalConsistency: false});
+    const session = db.getMongo().startSession();
     const sessionDB = session.getDatabase(dbName);
     const sessionColl = sessionDB.getCollection(collName);
 
@@ -25,13 +25,15 @@
     session.startTransaction();
     assert.commandFailedWithCode(sessionDB.adminCommand({commitTransaction: 1}),
                                  ErrorCodes.OperationNotSupportedInTransaction);
-    session.abortTransaction_forTesting();
+    assert.commandFailedWithCode(session.abortTransaction_forTesting(),
+                                 ErrorCodes.NoSuchTransaction);
 
     // ---- Test 2. No operations before abort ----
     session.startTransaction();
     assert.commandFailedWithCode(sessionDB.adminCommand({abortTransaction: 1}),
                                  ErrorCodes.OperationNotSupportedInTransaction);
-    session.abortTransaction_forTesting();
+    assert.commandFailedWithCode(session.abortTransaction_forTesting(),
+                                 ErrorCodes.NoSuchTransaction);
 
     // ---- Test 3. Only reads before commit ----
     session.startTransaction();

@@ -36,7 +36,8 @@ selector:
   # View tests aren't expected to work when collections are implicitly sharded.
   - jstests/core/txns/view_reads_in_transaction.js
 
-  # Empty commit/abort is allowed in mongos.
+  # Empty commit/abort is currently allowed in mongos.
+  # TODO: SERVER-40885: unblacklist this.
   - jstests/core/txns/empty_commit_abort.js
 
   exclude_with_any_tags:
