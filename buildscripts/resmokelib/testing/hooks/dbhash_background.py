@@ -29,11 +29,13 @@ class CheckReplDBHashInBackground(jsfile.JSHook):
         """Start the background thread."""
         client = self.fixture.mongo_client()
         server_status = client.admin.command("serverStatus")
-        if not server_status["storageEngine"].get("supportsSnapshotReadConcern", False):
-            self.logger.info(
-                "Not enabling the background thread because '%s' storage engine"
-                " doesn't support snapshot reads.", server_status["storageEngine"]["name"])
-            return
+        # mongos does not provide storageEngine information.
+        if "storageEngine" in server_status:
+            if not server_status["storageEngine"].get("supportsSnapshotReadConcern", False):
+                self.logger.info(
+                    "Not enabling the background thread because '%s' storage engine"
+                    " doesn't support snapshot reads.", server_status["storageEngine"]["name"])
+                return
 
         self._background_job = _BackgroundJob()
         self.logger.info("Starting the background thread.")
