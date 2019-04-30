@@ -19,6 +19,7 @@ executor:
           usingReplicaSetShards: true
   hooks:
   - class: ContinuousStepdown
+    stepup_instead: true
     config_stepdown: true
     shard_stepdown: true
   # The CheckReplDBHash hook waits until all operations have replicated to and have been applied
