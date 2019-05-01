@@ -432,7 +432,7 @@
 
     if (topology.type === Topology.kReplicaSet) {
         let res = checkReplDbhashBackgroundThread(topology.nodes);
-        assert.commandWorked(res, 'data consistency checks failed: ' + tojson(res));
+        assert.commandWorked(res, () => 'data consistency checks failed: ' + tojson(res));
     } else if (topology.type === Topology.kShardedCluster) {
         const threads = [];
         try {
@@ -476,7 +476,7 @@
             });
 
             returnData.forEach(res => {
-                assert.commandWorked(res, 'data consistency checks failed: ' + tojson(res));
+                assert.commandWorked(res, () => 'data consistency checks failed: ' + tojson(res));
             });
         }
     } else {
