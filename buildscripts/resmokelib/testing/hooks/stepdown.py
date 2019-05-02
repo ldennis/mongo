@@ -361,8 +361,9 @@ class _StepdownThread(threading.Thread):  # pylint: disable=too-many-instance-at
             client = primary.mongo_client()
             client.admin.command({"replSetFreeze": 0})
         elif secondaries:
-            self.logger.info("Successfully stepped up the secondary on port %d of replica set '%s'.",
-                             chosen.port, rs_fixture.replset_name)
+            self.logger.info(
+                "Successfully stepped up the secondary on port %d of replica set '%s'.",
+                chosen.port, rs_fixture.replset_name)
             client = primary.mongo_client()
             while True:
                 is_secondary = client.admin.command("isMaster")["secondary"]
