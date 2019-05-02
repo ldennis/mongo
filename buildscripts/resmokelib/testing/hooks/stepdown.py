@@ -275,8 +275,9 @@ class _StepdownThread(threading.Thread):  # pylint: disable=too-many-instance-at
         # Check that the fixture is still running before stepping down or killing the primary.
         # This ensures we still detect some cases in which the fixture has already crashed.
         if not rs_fixture.is_running():
-            raise errors.ServerFailure("ReplicaSetFixture expected to be running in"
-                                       " ContinuousStepdown, but wasn't.")
+            raise errors.ServerFailure("ReplicaSetFixture {} expected to be running in"
+                                       " ContinuousStepdown, but wasn't.".format(
+                                           rs_fixture.replset_name))
 
         if self._terminate:
             should_kill = self._kill and random.choice([True, False])
@@ -359,11 +360,17 @@ class _StepdownThread(threading.Thread):  # pylint: disable=too-many-instance-at
             # in the next round of _step_down().
             client = primary.mongo_client()
             client.admin.command({"replSetFreeze": 0})
-        else:
-            # If we want step up instead and we failed to step up one of the secondaries, it is not
-            # an error. We'll try again after self._stepdown_interval_secs seconds.
-            if not secondaries:
-                return
+        elif secondaries:
+            self.logger.info("Successfully stepped up the secondary on port %d of replica set '%s'.",
+                             chosen.port, rs_fixture.replset_name)
+            client = primary.mongo_client()
+            while True:
+                is_secondary = client.admin.command("isMaster")["secondary"]
+                if is_secondary:
+                    break
+                self.logger.info("Waiting for primary on port %d to step down.", primary.port)
+                time.sleep(0.5)  # Wait a little bit before trying again.
+            self.logger.info("Primary on port %d stepped down.", primary.port)
 
         if not secondaries:
             # If we failed to step up one of the secondaries, then we run the replSetStepUp to try
