@@ -26,7 +26,7 @@ class ContinuousStepdown(interface.Hook):  # pylint: disable=too-many-instance-a
             self, hook_logger, fixture, config_stepdown=True, shard_stepdown=True,
             stepdown_interval_ms=8000, terminate=False, kill=False,
             use_stepdown_permitted_file=False, use_stepping_down_file=False,
-            wait_for_mongos_retarget=False, stepup_instead=False):
+            wait_for_mongos_retarget=False, stepup_instead=True):
         """Initialize the ContinuousStepdown.
 
         Args:
