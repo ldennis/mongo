@@ -690,7 +690,7 @@ TransactionParticipant::TxnResources::TxnResources(WithLock wl,
     // On secondaries, we yield the locks for transactions.
     if (stashStyle == StashStyle::kSecondary) {
         _lockSnapshot = std::make_unique<Locker::LockSnapshot>();
-        _locker->releaseWriteUnitOfWorkAndUnlock(_lockSnapshot.get());
+        invariant(_locker->releaseWriteUnitOfWorkAndUnlock(_lockSnapshot.get()));
     }
 
     // This thread must still respect the transaction lock timeout, since it can prevent the

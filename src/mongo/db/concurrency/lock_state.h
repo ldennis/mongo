@@ -197,7 +197,7 @@ public:
     virtual boost::optional<LockerInfo> getLockerInfo(
         const boost::optional<SingleThreadedLockStats> lockStatsBase) const final;
 
-    virtual bool saveLockStateAndUnlock(LockSnapshot* stateOut);
+    virtual bool saveLockStateAndUnlock(LockSnapshot* stateOut, bool forceRelease = false);
 
     virtual void restoreLockState(OperationContext* opCtx, const LockSnapshot& stateToRestore);
     virtual void restoreLockState(const LockSnapshot& stateToRestore) {

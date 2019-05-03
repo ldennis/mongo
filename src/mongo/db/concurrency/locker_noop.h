@@ -186,7 +186,7 @@ public:
         return boost::none;
     }
 
-    virtual bool saveLockStateAndUnlock(LockSnapshot* stateOut) {
+    virtual bool saveLockStateAndUnlock(LockSnapshot* stateOut, bool forceRelease = false) {
         MONGO_UNREACHABLE;
     }
 

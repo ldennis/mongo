@@ -186,8 +186,9 @@ void LockerImpl::dump() const {
     _lock.lock();
     LockRequestsMap::ConstIterator it = _requests.begin();
     while (!it.finished()) {
-        ss << it.key().toString() << " " << lockRequestStatusName(it->status) << " in "
-           << modeName(it->mode) << "; ";
+        ss << it.key().toString() << " " << (&(*it)) << " " << lockRequestStatusName(it->status)
+           << " in " << modeName(it->mode) << " recursiveCount " << it->recursiveCount
+           << " unlockPending " << it->unlockPending << "; ";
         it.next();
     }
     _lock.unlock();
@@ -472,18 +473,17 @@ bool LockerImpl::releaseWriteUnitOfWorkAndUnlock(LockSnapshot* stateOut) {
     // nested WUOW's. Thus we don't have to remember the nesting level.
     invariant(_wuowNestingLevel == 1);
     --_wuowNestingLevel;
-    invariant(!isGlobalLockedRecursively());
 
     // All locks should be pending to unlock.
     invariant(_requests.size() == _numResourcesToUnlockAtEndUnitOfWork);
     for (auto it = _requests.begin(); it; it.next()) {
         // No converted lock so we don't need to unlock more than once.
-        invariant(it->unlockPending == 1);
+        invariant(it->unlockPending == it->recursiveCount);
         it->unlockPending--;
     }
     _numResourcesToUnlockAtEndUnitOfWork = 0;
 
-    return saveLockStateAndUnlock(stateOut);
+    return saveLockStateAndUnlock(stateOut, true /* forceRelease */);
 }
 
 void LockerImpl::restoreWriteUnitOfWorkAndLock(OperationContext* opCtx,
@@ -701,7 +701,7 @@ boost::optional<Locker::LockerInfo> LockerImpl::getLockerInfo(
     return std::move(lockerInfo);
 }
 
-bool LockerImpl::saveLockStateAndUnlock(Locker::LockSnapshot* stateOut) {
+bool LockerImpl::saveLockStateAndUnlock(Locker::LockSnapshot* stateOut, bool forceRelease) {
     // We shouldn't be saving and restoring lock state from inside a WriteUnitOfWork.
     invariant(!inAWriteUnitOfWork());
 
@@ -725,13 +725,17 @@ bool LockerImpl::saveLockStateAndUnlock(Locker::LockSnapshot* stateOut) {
     // the DBDirectClient is probably not prepared for lock release.
     LockRequestsMap::Iterator rstlRequest =
         _requests.find(resourceIdReplicationStateTransitionLock);
-    if (globalRequest->recursiveCount > 1 || (rstlRequest && rstlRequest->recursiveCount > 1)) {
+    if (!forceRelease &&
+        (globalRequest->recursiveCount > 1 || (rstlRequest && rstlRequest->recursiveCount > 1))) {
         return false;
     }
 
     // The global lock must have been acquired just once
     stateOut->globalMode = globalRequest->mode;
-    invariant(unlock(resourceIdGlobal));
+    int i = 0;
+    while (globalRequest->recursiveCount > 0) {
+        invariant(unlock(resourceIdGlobal) || globalRequest->recursiveCount > 0);
+    }
 
     // Next, the non-global locks.
     for (LockRequestsMap::Iterator it = _requests.begin(); !it.finished(); it.next()) {
@@ -752,7 +756,11 @@ bool LockerImpl::saveLockStateAndUnlock(Locker::LockSnapshot* stateOut) {
 
         stateOut->locks.push_back(info);
 
-        invariant(unlock(resId));
+        invariant(it->recursiveCount == 1 || forceRelease);
+        i = 0;
+        while (it->recursiveCount > 0) {
+            invariant(unlock(resId) || it->recursiveCount > 0);
+        }
     }
     invariant(!isLocked());
 
