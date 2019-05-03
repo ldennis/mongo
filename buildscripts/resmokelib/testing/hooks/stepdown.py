@@ -364,14 +364,19 @@ class _StepdownThread(threading.Thread):  # pylint: disable=too-many-instance-at
             self.logger.info(
                 "Successfully stepped up the secondary on port %d of replica set '%s'.",
                 chosen.port, rs_fixture.replset_name)
-            client = primary.mongo_client()
             while True:
-                is_secondary = client.admin.command("isMaster")["secondary"]
-                if is_secondary:
-                    break
-                self.logger.info("Waiting for primary on port %d to step down.", primary.port)
+                try:
+                    client = primary.mongo_client()
+                    is_secondary = client.admin.command("isMaster")["secondary"]
+                    if is_secondary:
+                        break
+                except pymongo.errors.AutoReconnect:
+                    pass
+                self.logger.info("Waiting for primary on port %d of replica set '%s' to step down.",
+                                 primary.port, rs_fixture.replset_name)
                 time.sleep(0.5)  # Wait a little bit before trying again.
-            self.logger.info("Primary on port %d stepped down.", primary.port)
+            self.logger.info("Primary on port %d of replica set '%s' stepped down.", primary.port,
+                             rs_fixture.replset_name)
 
         if not secondaries:
             # If we failed to step up one of the secondaries, then we run the replSetStepUp to try
