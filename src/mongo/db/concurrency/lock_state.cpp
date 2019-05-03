@@ -474,16 +474,19 @@ bool LockerImpl::releaseWriteUnitOfWorkAndUnlock(LockSnapshot* stateOut) {
     invariant(_wuowNestingLevel == 1);
     --_wuowNestingLevel;
 
+    if (!_requests.find(resourceIdGlobal))
+        return false;
+
     // All locks should be pending to unlock.
     invariant(_requests.size() == _numResourcesToUnlockAtEndUnitOfWork);
     for (auto it = _requests.begin(); it; it.next()) {
-        // No converted lock so we don't need to unlock more than once.
         invariant(it->unlockPending == it->recursiveCount);
         it->unlockPending--;
     }
     _numResourcesToUnlockAtEndUnitOfWork = 0;
 
-    return saveLockStateAndUnlock(stateOut, true /* forceRelease */);
+    _saveLockStateAndUnlockImpl(stateOut);
+    return true;
 }
 
 void LockerImpl::restoreWriteUnitOfWorkAndLock(OperationContext* opCtx,
@@ -701,7 +704,7 @@ boost::optional<Locker::LockerInfo> LockerImpl::getLockerInfo(
     return std::move(lockerInfo);
 }
 
-bool LockerImpl::saveLockStateAndUnlock(Locker::LockSnapshot* stateOut, bool forceRelease) {
+bool LockerImpl::saveLockStateAndUnlock(Locker::LockSnapshot* stateOut) {
     // We shouldn't be saving and restoring lock state from inside a WriteUnitOfWork.
     invariant(!inAWriteUnitOfWork());
 
@@ -725,14 +728,19 @@ bool LockerImpl::saveLockStateAndUnlock(Locker::LockSnapshot* stateOut, bool for
     // the DBDirectClient is probably not prepared for lock release.
     LockRequestsMap::Iterator rstlRequest =
         _requests.find(resourceIdReplicationStateTransitionLock);
-    if (!forceRelease &&
-        (globalRequest->recursiveCount > 1 || (rstlRequest && rstlRequest->recursiveCount > 1))) {
+    if (globalRequest->recursiveCount > 1 || (rstlRequest && rstlRequest->recursiveCount > 1)) {
         return false;
     }
 
-    // The global lock must have been acquired just once
+    _saveLockStateAndUnlockImpl(stateOut);
+
+    return true;
+}
+
+void LockerImpl::_saveLockStateAndUnlockImpl(Locker::LockSnapshot* stateOut) {
+    LockRequestsMap::Iterator globalRequest = _requests.find(resourceIdGlobal);
+    invariant(globalRequest);
     stateOut->globalMode = globalRequest->mode;
-    int i = 0;
     while (globalRequest->recursiveCount > 0) {
         invariant(unlock(resourceIdGlobal) || globalRequest->recursiveCount > 0);
     }
@@ -756,8 +764,6 @@ bool LockerImpl::saveLockStateAndUnlock(Locker::LockSnapshot* stateOut, bool for
 
         stateOut->locks.push_back(info);
 
-        invariant(it->recursiveCount == 1 || forceRelease);
-        i = 0;
         while (it->recursiveCount > 0) {
             invariant(unlock(resId) || it->recursiveCount > 0);
         }
@@ -766,8 +772,6 @@ bool LockerImpl::saveLockStateAndUnlock(Locker::LockSnapshot* stateOut, bool for
 
     // Sort locks by ResourceId. They'll later be acquired in this canonical locking order.
     std::sort(stateOut->locks.begin(), stateOut->locks.end());
-
-    return true;
 }
 
 void LockerImpl::restoreLockState(OperationContext* opCtx, const Locker::LockSnapshot& state) {

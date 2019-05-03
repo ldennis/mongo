@@ -419,7 +419,7 @@ public:
      * Returns false if locks are not released.  restoreLockState(...) does not need to be
      * called in this case.
      */
-    virtual bool saveLockStateAndUnlock(LockSnapshot* stateOut, bool forceRelease = false) = 0;
+    virtual bool saveLockStateAndUnlock(LockSnapshot* stateOut) = 0;
 
     /**
      * Re-locks all locks whose state was stored in 'stateToRestore'.

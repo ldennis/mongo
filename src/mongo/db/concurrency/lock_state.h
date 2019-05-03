@@ -197,7 +197,7 @@ public:
     virtual boost::optional<LockerInfo> getLockerInfo(
         const boost::optional<SingleThreadedLockStats> lockStatsBase) const final;
 
-    virtual bool saveLockStateAndUnlock(LockSnapshot* stateOut, bool forceRelease = false);
+    virtual bool saveLockStateAndUnlock(LockSnapshot* stateOut);
 
     virtual void restoreLockState(OperationContext* opCtx, const LockSnapshot& stateToRestore);
     virtual void restoreLockState(const LockSnapshot& stateToRestore) {
@@ -307,6 +307,12 @@ private:
      * across network calls.
      */
     bool _shouldDelayUnlock(ResourceId resId, LockMode mode) const;
+
+    /**
+     * Save all locks acquired into a lock snapshot and unlock them. All locks acquired must have
+     * unlockPending == recursiveCount.
+     */
+    void _saveLockStateAndUnlockImpl(Locker::LockSnapshot* stateOut);
 
     /**
      * Releases the ticket for the Locker.
