@@ -562,6 +562,63 @@ TEST_F(LockerImplTest, releaseAndRestoreEmptyWriteUnitOfWork) {
     ASSERT_FALSE(locker.isLocked());
 }
 
+TEST_F(LockerImplTest, releaseAndRestoreWriteUnitOfWorkWithRecursiveLocks) {
+    Locker::LockSnapshot lockInfo;
+
+    LockerImpl locker;
+
+    const ResourceId resIdDatabase(RESOURCE_DATABASE, "TestDB"_sd);
+    const ResourceId resIdCollection(RESOURCE_COLLECTION, "TestDB.collection"_sd);
+
+    locker.beginWriteUnitOfWork();
+    // Lock some stuff.
+    locker.lockGlobal(MODE_IX);
+    locker.lock(resIdDatabase, MODE_IX);
+    locker.lock(resIdCollection, MODE_X);
+    // Recursively lock them again with a weaker mode.
+    locker.lockGlobal(MODE_IS);
+    locker.lock(resIdDatabase, MODE_IS);
+    locker.lock(resIdCollection, MODE_S);
+
+    // Make sure locks are converted.
+    ASSERT_EQUALS(MODE_IX, locker.getLockMode(resIdDatabase));
+    ASSERT_EQUALS(MODE_X, locker.getLockMode(resIdCollection));
+    ASSERT_TRUE(locker.isWriteLocked());
+    ASSERT_TRUE(locker.isGlobalLockedRecursively());
+
+    // Unlock them so that they will be pending to unlock.
+    ASSERT_FALSE(locker.unlock(resIdCollection));
+    ASSERT_FALSE(locker.unlock(resIdDatabase));
+    ASSERT_FALSE(locker.unlockGlobal());
+    // Unlock again so unlockPending == recursiveCount.
+    ASSERT_FALSE(locker.unlock(resIdCollection));
+    ASSERT_FALSE(locker.unlock(resIdDatabase));
+    ASSERT_FALSE(locker.unlockGlobal());
+
+    ASSERT(locker.releaseWriteUnitOfWork(&lockInfo));
+
+    // Things shouldn't be locked anymore.
+    ASSERT_EQUALS(MODE_NONE, locker.getLockMode(resIdDatabase));
+    ASSERT_EQUALS(MODE_NONE, locker.getLockMode(resIdCollection));
+    ASSERT_FALSE(locker.isLocked());
+
+    // Restore lock state.
+    locker.restoreWriteUnitOfWork(nullptr, lockInfo);
+
+    // Make sure things were re-locked.
+    ASSERT_EQUALS(MODE_IX, locker.getLockMode(resIdDatabase));
+    ASSERT_EQUALS(MODE_X, locker.getLockMode(resIdCollection));
+    ASSERT_TRUE(locker.isWriteLocked());
+    // Make sure global lock was coalesced.
+    ASSERT_FALSE(locker.isGlobalLockedRecursively());
+
+    locker.endWriteUnitOfWork();
+
+    ASSERT_EQUALS(MODE_NONE, locker.getLockMode(resIdDatabase));
+    ASSERT_EQUALS(MODE_NONE, locker.getLockMode(resIdCollection));
+    ASSERT_FALSE(locker.isLocked());
+}
+
 TEST_F(LockerImplTest, DefaultLocker) {
     const ResourceId resId(RESOURCE_DATABASE, "TestDB"_sd);
 

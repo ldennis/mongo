@@ -474,6 +474,10 @@ bool LockerImpl::releaseWriteUnitOfWorkAndUnlock(LockSnapshot* stateOut) {
     invariant(_wuowNestingLevel == 1);
     --_wuowNestingLevel;
 
+    // Clear out whatever is in stateOut.
+    stateOut->locks.clear();
+    stateOut->globalMode = MODE_NONE;
+
     if (!_requests.find(resourceIdGlobal))
         return false;
 
@@ -500,6 +504,7 @@ void LockerImpl::restoreWriteUnitOfWorkAndLock(OperationContext* opCtx,
         invariant(_shouldDelayUnlock(it.key(), (it->mode)));
         invariant(it->unlockPending == 0);
         it->unlockPending++;
+        invariant(it->unlockPending == it->recursiveCount);
     }
     _numResourcesToUnlockAtEndUnitOfWork = static_cast<unsigned>(_requests.size());
 
@@ -741,8 +746,15 @@ void LockerImpl::_saveLockStateAndUnlockImpl(Locker::LockSnapshot* stateOut) {
     LockRequestsMap::Iterator globalRequest = _requests.find(resourceIdGlobal);
     invariant(globalRequest);
     stateOut->globalMode = globalRequest->mode;
+    // Make sure unlockPending is equal to or one less than recursiveCount so we can coalesce into
+    // one.
+    invariant(globalRequest->recursiveCount - globalRequest->unlockPending <= 1);
+    // If a lock is converted, unlock() may be called multiple times.
     while (globalRequest->recursiveCount > 0) {
-        invariant(unlock(resourceIdGlobal) || globalRequest->recursiveCount > 0);
+        bool res = unlock(resourceIdGlobal);
+        // unlock() should return true or unlock() needs to be called again.
+        invariant((!res && globalRequest->recursiveCount > 0) ||
+                  (res && globalRequest->recursiveCount == 0));
     }
 
     // Next, the non-global locks.
@@ -764,8 +776,14 @@ void LockerImpl::_saveLockStateAndUnlockImpl(Locker::LockSnapshot* stateOut) {
 
         stateOut->locks.push_back(info);
 
+        // Make sure unlockPending is equal to or one less than recursiveCount so we can coalesce
+        // into one.
+        invariant(it->recursiveCount - it->unlockPending <= 1);
+        // If a lock is converted, unlock() may be called multiple times.
         while (it->recursiveCount > 0) {
-            invariant(unlock(resId) || it->recursiveCount > 0);
+            bool res = unlock(resId);
+            // unlock() should return true or unlock() needs to be called again.
+            invariant((!res && it->recursiveCount > 0) || (res && it->recursiveCount == 0));
         }
     }
     invariant(!isLocked());

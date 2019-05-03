@@ -309,8 +309,10 @@ private:
     bool _shouldDelayUnlock(ResourceId resId, LockMode mode) const;
 
     /**
-     * Save all locks acquired into a lock snapshot and unlock them. All locks acquired must have
-     * unlockPending == recursiveCount.
+     * Save all locks acquired into a lock snapshot and unlock them. This cannot be called on an
+     * empty locker (i.e. global lock must be in _request). This function supports saving and
+     * unlocking converted locks as long as their unlockPending is equal to or one less than
+     * recursiveCount. In that case, converted locks will be coalesced into one so restore can work.
      */
     void _saveLockStateAndUnlockImpl(Locker::LockSnapshot* stateOut);
 
