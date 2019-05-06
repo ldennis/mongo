@@ -68,7 +68,7 @@
             secondSession.getDatabase(dbName).getCollection(collName).insert({_id: "second-doc"}));
         secondSession.commitTransaction();
 
-        // Unfreeze the original primary so that it can stand for election again for the next text.
+        // Unfreeze the original primary so that it can stand for election again for the next test.
         assert.commandWorked(primary.adminCommand({replSetFreeze: 0}));
     }
 

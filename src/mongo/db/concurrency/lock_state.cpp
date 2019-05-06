@@ -484,6 +484,7 @@ bool LockerImpl::releaseWriteUnitOfWorkAndUnlock(LockSnapshot* stateOut) {
     // All locks should be pending to unlock.
     invariant(_requests.size() == _numResourcesToUnlockAtEndUnitOfWork);
     for (auto it = _requests.begin(); it; it.next()) {
+        invariant(it->unlockPending > 0 && it->recursiveCount > 0);
         invariant(it->unlockPending == it->recursiveCount);
         it->unlockPending--;
     }
