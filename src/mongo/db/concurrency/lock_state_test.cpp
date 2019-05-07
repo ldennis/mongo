@@ -1068,11 +1068,13 @@ TEST_F(LockerImplTest, ConvertLockPendingUnlock) {
     ASSERT_TRUE(locker.isLockHeldForMode(resId, MODE_IX));
     ASSERT(locker.numResourcesToUnlockAtEndUnitOfWorkForTest() == 1);
     ASSERT(locker.getRequestsForTest().find(resId).objAddr()->unlockPending == 1);
+    ASSERT(locker.getRequestsForTest().find(resId).objAddr()->recursiveCount == 1);
 
     // Convert lock pending unlock.
     locker.lock(resId, MODE_X);
     ASSERT(locker.numResourcesToUnlockAtEndUnitOfWorkForTest() == 1);
     ASSERT(locker.getRequestsForTest().find(resId).objAddr()->unlockPending == 1);
+    ASSERT(locker.getRequestsForTest().find(resId).objAddr()->recursiveCount == 2);
 
     locker.endWriteUnitOfWork();
 
@@ -1098,16 +1100,22 @@ TEST_F(LockerImplTest, ConvertLockPendingUnlockAndUnlock) {
     ASSERT_TRUE(locker.isLockHeldForMode(resId, MODE_IX));
     ASSERT(locker.numResourcesToUnlockAtEndUnitOfWorkForTest() == 1);
     ASSERT(locker.getRequestsForTest().find(resId).objAddr()->unlockPending == 1);
+    ASSERT(locker.getRequestsForTest().find(resId).objAddr()->recursiveCount == 1);
 
     // Convert lock pending unlock.
     locker.lock(resId, MODE_X);
     ASSERT(locker.numResourcesToUnlockAtEndUnitOfWorkForTest() == 1);
     ASSERT(locker.getRequestsForTest().find(resId).objAddr()->unlockPending == 1);
+    ASSERT(locker.getRequestsForTest().find(resId).objAddr()->recursiveCount == 2);
 
     // Unlock the lock conversion.
     ASSERT_FALSE(locker.unlock(resId));
     ASSERT(locker.numResourcesToUnlockAtEndUnitOfWorkForTest() == 1);
     ASSERT(locker.getRequestsForTest().find(resId).objAddr()->unlockPending == 1);
+    // Make sure we still hold X lock and unlock the weaker mode to decrement recursiveCount instead
+    // of incrementing unlockPending.
+    ASSERT_TRUE(locker.isLockHeldForMode(resId, MODE_X));
+    ASSERT(locker.getRequestsForTest().find(resId).objAddr()->recursiveCount == 1);
 
     locker.endWriteUnitOfWork();
 
