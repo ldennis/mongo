@@ -356,8 +356,12 @@ class _StepdownThread(threading.Thread):  # pylint: disable=too-many-instance-at
             finally:
                 primary.preserve_dbpath = original_preserve_dbpath
         elif not self._stepup_instead:
-            # We always run the {replSetFreeze: 0} command to ensure the former primary is electable
-            # in the next round of _step_down().
+            # If we chose to step up a secondary instead, the primary was never stepped down via the
+            # replSetStepDown command and thus will not have a stepdown period. So we can skip
+            # running {replSetFreeze: 0}. Otherwise, the replSetStepDown command run earlier
+            # introduced a stepdown period on the former primary and so we have to run the
+            # {replSetFreeze: 0} command to ensure the former primary is electable in the next
+            # round of _step_down().
             client = primary.mongo_client()
             client.admin.command({"replSetFreeze": 0})
         elif secondaries:
@@ -374,7 +378,7 @@ class _StepdownThread(threading.Thread):  # pylint: disable=too-many-instance-at
                     pass
                 self.logger.info("Waiting for primary on port %d of replica set '%s' to step down.",
                                  primary.port, rs_fixture.replset_name)
-                time.sleep(0.5)  # Wait a little bit before trying again.
+                time.sleep(0.2)  # Wait a little bit before trying again.
             self.logger.info("Primary on port %d of replica set '%s' stepped down.", primary.port,
                              rs_fixture.replset_name)
 
