@@ -69,6 +69,15 @@ int wiredTigerPrepareConflictRetry(OperationContext* opCtx, F&& f) {
     CurOp::get(opCtx)->debug().additiveMetrics.incrementPrepareReadConflicts(1);
     wiredTigerPrepareConflictLog(attempts);
 
+    for (const auto& lock : opCtx->lockState()->getLockerInfo(boost::none)->locks) {
+        const auto type = lock.resourceId.getType();
+        // Invariant that we do not get a prepare conflict while holding a global, database, or
+        // collection MODE_S lock.
+        if (type == RESOURCE_GLOBAL || type == RESOURCE_DATABASE || type == RESOURCE_COLLECTION)
+            invariant(lock.mode != MODE_S,
+                      str::stream() << lock.resourceId.toString() << " in " << modeName(lock.mode));
+    }
+
     if (MONGO_FAIL_POINT(WTSkipPrepareConflictRetries)) {
         // Callers of wiredTigerPrepareConflictRetry() should eventually call wtRCToStatus() via
         // invariantWTOK() and have the WT_ROLLBACK error bubble up as a WriteConflictException.
