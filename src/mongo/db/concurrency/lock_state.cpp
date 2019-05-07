@@ -530,6 +530,10 @@ bool LockerImpl::unlock(ResourceId resId) {
         return false;
 
     if (inAWriteUnitOfWork() && _shouldDelayUnlock(it.key(), (it->mode))) {
+        if (it->recursiveCount > 1) {
+            invariant(!_unlockImpl(&it));
+            return false;
+        }
         if (!it->unlockPending) {
             _numResourcesToUnlockAtEndUnitOfWork++;
         }
