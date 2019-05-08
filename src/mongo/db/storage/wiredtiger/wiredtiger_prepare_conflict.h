@@ -69,7 +69,9 @@ int wiredTigerPrepareConflictRetry(OperationContext* opCtx, F&& f) {
     CurOp::get(opCtx)->debug().additiveMetrics.incrementPrepareReadConflicts(1);
     wiredTigerPrepareConflictLog(attempts);
 
-    for (const auto& lock : opCtx->lockState()->getLockerInfo(boost::none)->locks) {
+    const auto lockerInfo = opCtx->lockState()->getLockerInfo(boost::none);
+    invariant(lockerInfo);
+    for (const auto& lock : lockerInfo->locks) {
         const auto type = lock.resourceId.getType();
         // Invariant that we do not get a prepare conflict while holding a global, database, or
         // collection MODE_S lock.
