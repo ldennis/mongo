@@ -10,7 +10,7 @@
     "use strict";
     load("jstests/core/txns/libs/prepare_helpers.js");
 
-    const replTest = new ReplSetTest({nodes: 1});
+    const replTest = new ReplSetTest({nodes: 2});
     replTest.startSet();
     replTest.initiate();
 
@@ -24,6 +24,9 @@
     const testDB = conn.getDB(dbName);
     const testColl = testDB.getCollection(collName);
     const testColl2 = testDB.getCollection(collName2);
+
+    const secondary = replTest.getSecondary();
+    const secondaryTestDB = secondary.getDB(dbName);
 
     // Turn off timestamp reaping so that clusterTimeBeforePrepare doesn't get too old.
     assert.commandWorked(testDB.adminCommand({
@@ -54,6 +57,33 @@
                 assert(res.cursor, tojson(res));
                 assert.eq(res.cursor.firstBatch.length, num_expected, tojson(res));
             }
+            return res;
+        };
+
+        const dbHash = function(read_concern, timeout, db) {
+            let res = db.runCommand({
+                dbHash: 1,
+                readConcern: read_concern,
+                maxTimeMS: timeout,
+            });
+
+            return res;
+        };
+
+        let reduce = function(key, vals) {
+            return 1;
+        };
+        let map = function() {
+            emit(this.a, this.a);
+        };
+        const mapReduce = function(read_concern, timeout, db) {
+            let res = db.runCommand({
+                mapReduce: collName,
+                map: map,
+                reduce: reduce,
+                out: {inline: 1},
+                readConcern: read_concern,
+            });
             return res;
         };
 
@@ -124,6 +154,14 @@
                                   testDB,
                                   collName2,
                                   1));
+
+        jsTestLog("Test dbHash on secondary afterClusterTime read after prepareTimestamp " +
+                  "doesn't block on a prepared transaction.");
+        assert.commandWorked(dbHash({level: 'local'}, failureTimeout, secondaryTestDB));
+
+        jsTestLog("Test mapReduce on secondary afterClusterTime read after prepareTimestamp " +
+                  "doesn't block on a prepared transaction.");
+        assert.commandWorked(mapReduce({level: 'local'}, failureTimeout, secondaryTestDB));
 
         jsTestLog("Test read from an update blocks on a prepared transaction.");
         assert.commandFailedWithCode(testDB.runCommand({

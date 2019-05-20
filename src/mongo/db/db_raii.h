@@ -222,4 +222,37 @@ private:
  */
 LockMode getLockModeForQuery(OperationContext* opCtx, const boost::optional<NamespaceString>& nss);
 
+/**
+ * When in scope, closes any active storage transactions and enforces prepare conflicts for reads.
+ *
+ * Locks must be held while this is in scope because both constructor and destructor access the
+ * storage engine.
+ */
+class EnforcePrepareConflictsBlock {
+public:
+    explicit EnforcePrepareConflictsBlock(OperationContext* opCtx)
+        : _opCtx(opCtx), _originalValue(opCtx->recoveryUnit()->getIgnorePrepared()) {
+        dassert(_opCtx->lockState()->isLocked());
+        dassert(!_opCtx->lockState()->inAWriteUnitOfWork());
+
+        // It is illegal to call setIgnorePrepared() while any storage transaction is active. This
+        // call is also harmless because any previous reads or writes should have already completed,
+        // as profile() is called at the end of an operation.
+        _opCtx->recoveryUnit()->abandonSnapshot();
+        _opCtx->recoveryUnit()->setIgnorePrepared(false);
+    }
+
+    ~EnforcePrepareConflictsBlock() {
+        dassert(_opCtx->lockState()->isLocked());
+        dassert(!_opCtx->lockState()->inAWriteUnitOfWork());
+
+        _opCtx->recoveryUnit()->abandonSnapshot();
+        _opCtx->recoveryUnit()->setIgnorePrepared(_originalValue);
+    }
+
+private:
+    OperationContext* _opCtx;
+    bool _originalValue;
+};
+
 }  // namespace mongo

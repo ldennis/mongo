@@ -176,6 +176,7 @@ void dropTempCollections(OperationContext* cleanupOpCtx,
             tempNamespace.ns(),
             [cleanupOpCtx, &tempNamespace] {
                 AutoGetDb autoDb(cleanupOpCtx, tempNamespace.db(), MODE_X);
+                EnforcePrepareConflictsBlock enforcePrepare(cleanupOpCtx);
                 if (auto db = autoDb.getDb()) {
                     if (auto collection = db->getCollection(cleanupOpCtx, tempNamespace)) {
                         uassert(ErrorCodes::PrimarySteppedDown,
@@ -200,6 +201,7 @@ void dropTempCollections(OperationContext* cleanupOpCtx,
         writeConflictRetry(
             cleanupOpCtx, "M/R dropTempCollections", incLong.ns(), [cleanupOpCtx, &incLong] {
                 Lock::DBLock lk(cleanupOpCtx, incLong.db(), MODE_X);
+                EnforcePrepareConflictsBlock enforcePrepare(cleanupOpCtx);
                 auto databaseHolder = DatabaseHolder::get(cleanupOpCtx);
                 if (auto db = databaseHolder->getDb(cleanupOpCtx, incLong.ns())) {
                     if (auto collection = db->getCollection(cleanupOpCtx, incLong)) {
@@ -507,6 +509,7 @@ void State::prepTempCollection() {
         // in the "local" database, so it does not get replicated to secondaries.
         writeConflictRetry(_opCtx, "M/R prepTempCollection", _config.incLong.ns(), [this] {
             AutoGetOrCreateDb autoGetIncCollDb(_opCtx, _config.incLong.db(), MODE_X);
+            EnforcePrepareConflictsBlock enforcePrepare(_opCtx);
             auto const db = autoGetIncCollDb.getDb();
             invariant(!db->getCollection(_opCtx, _config.incLong));
 
@@ -570,6 +573,7 @@ void State::prepTempCollection() {
     writeConflictRetry(_opCtx, "M/R prepTempCollection", _config.tempNamespace.ns(), [&] {
         // Create temp collection and insert the indexes from temporary storage
         AutoGetOrCreateDb autoGetFinalDb(_opCtx, _config.tempNamespace.db(), MODE_X);
+        EnforcePrepareConflictsBlock enforcePrepare(_opCtx);
         auto const db = autoGetFinalDb.getDb();
         invariant(!db->getCollection(_opCtx, _config.tempNamespace));
 
@@ -722,6 +726,7 @@ long long State::postProcessCollectionNonAtomic(OperationContext* opCtx,
         collectionCount(opCtx, _config.outputOptions.finalNamespace, callerHoldsGlobalLock) == 0) {
         // This must be global because we may write across different databases.
         Lock::GlobalWrite lock(opCtx);
+        EnforcePrepareConflictsBlock enforcePrepare(opCtx);
         // replace: just rename from temp to final collection name, dropping previous collection
         _db.dropCollection(_config.outputOptions.finalNamespace.ns());
         BSONObj info;
@@ -750,9 +755,12 @@ long long State::postProcessCollectionNonAtomic(OperationContext* opCtx,
         while (cursor->more()) {
             Lock::DBLock lock(opCtx, _config.outputOptions.finalNamespace.db(), MODE_X);
             BSONObj o = cursor->nextSafe();
+            EnforcePrepareConflictsBlock enforcePrepare(opCtx);
             Helpers::upsert(opCtx, _config.outputOptions.finalNamespace.ns(), o);
             pm.hit();
         }
+        Lock::GlobalLock globalLock(opCtx, MODE_IX);
+        EnforcePrepareConflictsBlock enforcePrepare(opCtx);
         _db.dropCollection(_config.tempNamespace.ns());
         pm.finished();
     } else if (_config.outputOptions.outType == Config::REDUCE) {
@@ -771,6 +779,7 @@ long long State::postProcessCollectionNonAtomic(OperationContext* opCtx,
         while (cursor->more()) {
             // This must be global because we may write across different databases.
             Lock::GlobalWrite lock(opCtx);
+            EnforcePrepareConflictsBlock enforcePrepare(opCtx);
             BSONObj temp = cursor->nextSafe();
             BSONObj old;
 
@@ -808,6 +817,7 @@ void State::insert(const NamespaceString& nss, const BSONObj& o) {
 
     writeConflictRetry(_opCtx, "M/R insert", nss.ns(), [this, &nss, &o] {
         AutoGetCollection autoColl(_opCtx, nss, MODE_IX);
+        EnforcePrepareConflictsBlock enforcePrepare(_opCtx);
         uassert(
             ErrorCodes::PrimarySteppedDown,
             str::stream() << "no longer primary while inserting mapReduce result into collection: "
@@ -847,6 +857,7 @@ void State::_insertToInc(BSONObj& o) {
 
     writeConflictRetry(_opCtx, "M/R insertToInc", _config.incLong.ns(), [this, &o] {
         AutoGetCollection autoColl(_opCtx, _config.incLong, MODE_IX);
+        EnforcePrepareConflictsBlock enforcePrepare(_opCtx);
         assertCollectionNotNull(_config.incLong, autoColl);
 
         WriteUnitOfWork wuow(_opCtx);
@@ -1397,6 +1408,16 @@ public:
 
     virtual bool supportsWriteConcern(const BSONObj& cmd) const override {
         return mrSupportsWriteConcern(cmd);
+    }
+
+    bool allowsAfterClusterTime(const BSONObj& cmd) const override {
+        return false;
+    }
+
+    bool canIgnorePrepareConflicts() const override {
+        // Map-Reduce is a special case for prepare conflicts. It may do writes to an output
+        // collection, but it enables enforcement of prepare conflicts before doing so.
+        return true;
     }
 
     virtual void addRequiredPrivileges(const std::string& dbname,
