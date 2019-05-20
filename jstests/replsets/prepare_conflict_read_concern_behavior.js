@@ -70,13 +70,13 @@
             return res;
         };
 
-        let reduce = function(key, vals) {
-            return 1;
-        };
-        let map = function() {
-            emit(this.a, this.a);
-        };
         const mapReduce = function(read_concern, timeout, db) {
+            let map = function() {
+                emit(this.a, this.a);
+            };
+            let reduce = function(key, vals) {
+                return 1;
+            };
             let res = db.runCommand({
                 mapReduce: collName,
                 map: map,
@@ -155,13 +155,53 @@
                                   collName2,
                                   1));
 
-        jsTestLog("Test dbHash on secondary afterClusterTime read after prepareTimestamp " +
-                  "doesn't block on a prepared transaction.");
-        assert.commandWorked(dbHash({level: 'local'}, failureTimeout, secondaryTestDB));
+        // Test that dbHash never gets prepare conflicts which would cause deadlocks on secondaries.
+        jsTestLog("Test dbHash doesn't support afterClusterTime read.");
+        assert.commandFailedWithCode(
+            dbHash({level: 'local', afterClusterTime: clusterTimeAfterPrepare},
+                   failureTimeout,
+                   secondaryTestDB),
+            ErrorCodes.InvalidOptions);
 
-        jsTestLog("Test mapReduce on secondary afterClusterTime read after prepareTimestamp " +
-                  "doesn't block on a prepared transaction.");
-        assert.commandWorked(mapReduce({level: 'local'}, failureTimeout, secondaryTestDB));
+        jsTestLog("Test dbHash doesn't support read concern other than local.");
+        assert.commandFailedWithCode(dbHash({level: 'available'}, failureTimeout, secondaryTestDB),
+                                     ErrorCodes.InvalidOptions);
+        assert.commandFailedWithCode(dbHash({level: 'majority'}, failureTimeout, secondaryTestDB),
+                                     ErrorCodes.InvalidOptions);
+        assert.commandFailedWithCode(dbHash({level: 'snapshot'}, failureTimeout, secondaryTestDB),
+                                     ErrorCodes.InvalidOptions);
+        assert.commandFailedWithCode(
+            dbHash({level: 'linearizable'}, failureTimeout, secondaryTestDB),
+            ErrorCodes.InvalidOptions);
+
+        jsTestLog("Test dbHash on secondary doesn't block on a prepared transaction.");
+        assert.commandWorked(dbHash({}, failureTimeout, secondaryTestDB));
+
+        // Test that mapReduce never gets prepare conflicts on secondaries which would cause
+        // deadlocks.
+        jsTestLog("Test mapReduce doesn't support afterClusterTime read.");
+        assert.commandFailedWithCode(
+            mapReduce({level: 'local', afterClusterTime: clusterTimeAfterPrepare},
+                      failureTimeout,
+                      secondaryTestDB),
+            ErrorCodes.InvalidOptions);
+
+        jsTestLog("Test mapReduce doesn't support read concern other than local.");
+        assert.commandFailedWithCode(
+            mapReduce({level: 'available'}, failureTimeout, secondaryTestDB),
+            ErrorCodes.InvalidOptions);
+        assert.commandFailedWithCode(
+            mapReduce({level: 'majority'}, failureTimeout, secondaryTestDB),
+            ErrorCodes.InvalidOptions);
+        assert.commandFailedWithCode(
+            mapReduce({level: 'snapshot'}, failureTimeout, secondaryTestDB),
+            ErrorCodes.InvalidOptions);
+        assert.commandFailedWithCode(
+            mapReduce({level: 'linearizable'}, failureTimeout, secondaryTestDB),
+            ErrorCodes.InvalidOptions);
+
+        jsTestLog("Test mapReduce on secondary doesn't block on a prepared transaction.");
+        assert.commandWorked(mapReduce({}, failureTimeout, secondaryTestDB));
 
         jsTestLog("Test read from an update blocks on a prepared transaction.");
         assert.commandFailedWithCode(testDB.runCommand({

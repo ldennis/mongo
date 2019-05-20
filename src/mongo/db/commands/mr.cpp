@@ -176,6 +176,7 @@ void dropTempCollections(OperationContext* cleanupOpCtx,
             tempNamespace.ns(),
             [cleanupOpCtx, &tempNamespace] {
                 AutoGetDb autoDb(cleanupOpCtx, tempNamespace.db(), MODE_X);
+                // Make sure we enforce prepare conflicts before writing.
                 EnforcePrepareConflictsBlock enforcePrepare(cleanupOpCtx);
                 if (auto db = autoDb.getDb()) {
                     if (auto collection = db->getCollection(cleanupOpCtx, tempNamespace)) {
@@ -201,6 +202,7 @@ void dropTempCollections(OperationContext* cleanupOpCtx,
         writeConflictRetry(
             cleanupOpCtx, "M/R dropTempCollections", incLong.ns(), [cleanupOpCtx, &incLong] {
                 Lock::DBLock lk(cleanupOpCtx, incLong.db(), MODE_X);
+                // Make sure we enforce prepare conflicts before writing.
                 EnforcePrepareConflictsBlock enforcePrepare(cleanupOpCtx);
                 auto databaseHolder = DatabaseHolder::get(cleanupOpCtx);
                 if (auto db = databaseHolder->getDb(cleanupOpCtx, incLong.ns())) {
@@ -509,6 +511,7 @@ void State::prepTempCollection() {
         // in the "local" database, so it does not get replicated to secondaries.
         writeConflictRetry(_opCtx, "M/R prepTempCollection", _config.incLong.ns(), [this] {
             AutoGetOrCreateDb autoGetIncCollDb(_opCtx, _config.incLong.db(), MODE_X);
+            // Make sure we enforce prepare conflicts before writing.
             EnforcePrepareConflictsBlock enforcePrepare(_opCtx);
             auto const db = autoGetIncCollDb.getDb();
             invariant(!db->getCollection(_opCtx, _config.incLong));
@@ -573,6 +576,7 @@ void State::prepTempCollection() {
     writeConflictRetry(_opCtx, "M/R prepTempCollection", _config.tempNamespace.ns(), [&] {
         // Create temp collection and insert the indexes from temporary storage
         AutoGetOrCreateDb autoGetFinalDb(_opCtx, _config.tempNamespace.db(), MODE_X);
+        // Make sure we enforce prepare conflicts before writing.
         EnforcePrepareConflictsBlock enforcePrepare(_opCtx);
         auto const db = autoGetFinalDb.getDb();
         invariant(!db->getCollection(_opCtx, _config.tempNamespace));
@@ -726,6 +730,7 @@ long long State::postProcessCollectionNonAtomic(OperationContext* opCtx,
         collectionCount(opCtx, _config.outputOptions.finalNamespace, callerHoldsGlobalLock) == 0) {
         // This must be global because we may write across different databases.
         Lock::GlobalWrite lock(opCtx);
+        // Make sure we enforce prepare conflicts before writing.
         EnforcePrepareConflictsBlock enforcePrepare(opCtx);
         // replace: just rename from temp to final collection name, dropping previous collection
         _db.dropCollection(_config.outputOptions.finalNamespace.ns());
@@ -755,11 +760,14 @@ long long State::postProcessCollectionNonAtomic(OperationContext* opCtx,
         while (cursor->more()) {
             Lock::DBLock lock(opCtx, _config.outputOptions.finalNamespace.db(), MODE_X);
             BSONObj o = cursor->nextSafe();
+            // Make sure we enforce prepare conflicts before writing.
             EnforcePrepareConflictsBlock enforcePrepare(opCtx);
             Helpers::upsert(opCtx, _config.outputOptions.finalNamespace.ns(), o);
             pm.hit();
         }
+        // Need a global lock before accessing the storage engine to enforce prepare conflicts.
         Lock::GlobalLock globalLock(opCtx, MODE_IX);
+        // Make sure we enforce prepare conflicts before writing.
         EnforcePrepareConflictsBlock enforcePrepare(opCtx);
         _db.dropCollection(_config.tempNamespace.ns());
         pm.finished();
@@ -779,6 +787,7 @@ long long State::postProcessCollectionNonAtomic(OperationContext* opCtx,
         while (cursor->more()) {
             // This must be global because we may write across different databases.
             Lock::GlobalWrite lock(opCtx);
+            // Make sure we enforce prepare conflicts before writing.
             EnforcePrepareConflictsBlock enforcePrepare(opCtx);
             BSONObj temp = cursor->nextSafe();
             BSONObj old;
@@ -817,6 +826,7 @@ void State::insert(const NamespaceString& nss, const BSONObj& o) {
 
     writeConflictRetry(_opCtx, "M/R insert", nss.ns(), [this, &nss, &o] {
         AutoGetCollection autoColl(_opCtx, nss, MODE_IX);
+        // Make sure we enforce prepare conflicts before writing.
         EnforcePrepareConflictsBlock enforcePrepare(_opCtx);
         uassert(
             ErrorCodes::PrimarySteppedDown,
@@ -857,6 +867,7 @@ void State::_insertToInc(BSONObj& o) {
 
     writeConflictRetry(_opCtx, "M/R insertToInc", _config.incLong.ns(), [this, &o] {
         AutoGetCollection autoColl(_opCtx, _config.incLong, MODE_IX);
+        // Make sure we enforce prepare conflicts before writing.
         EnforcePrepareConflictsBlock enforcePrepare(_opCtx);
         assertCollectionNotNull(_config.incLong, autoColl);
 
@@ -1416,7 +1427,8 @@ public:
 
     bool canIgnorePrepareConflicts() const override {
         // Map-Reduce is a special case for prepare conflicts. It may do writes to an output
-        // collection, but it enables enforcement of prepare conflicts before doing so.
+        // collection, but it enables enforcement of prepare conflicts before doing so. See use of
+        // EnforcePrepareConflictsBlock.
         return true;
     }
 
