@@ -223,7 +223,7 @@ private:
 LockMode getLockModeForQuery(OperationContext* opCtx, const boost::optional<NamespaceString>& nss);
 
 /**
- * When in scope, closes any active storage transactions and enforces prepare conflicts for reads.
+ * When in scope, enforces prepare conflicts.
  */
 class EnforcePrepareConflictsBlock {
 public:
@@ -232,7 +232,7 @@ public:
         dassert(!_opCtx->lockState()->inAWriteUnitOfWork());
 
         // It is illegal to call setIgnorePrepared() while any storage transaction is active.
-        // setIgnorePrepared() invariants that there is no open storage transaction.
+        // setIgnorePrepared() invariants that there is no active storage transaction.
         _opCtx->recoveryUnit()->setIgnorePrepared(false);
     }
 

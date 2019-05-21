@@ -155,6 +155,11 @@ void profile(OperationContext* opCtx, NetworkOp op) {
 
             Lock::CollectionLock collLock(opCtx, db->getProfilingNS(), MODE_IX);
 
+            // It is illegal to change the behavior of ignoring prepare conflicts while any storage
+            // transaction is active. This call is also harmless because any previous reads or
+            // writes should have already completed, as profile() is called at the end of an
+            // operation.
+            opCtx->recoveryUnit()->abandonSnapshot();
             // The profiler performs writes even after read commands. Ignoring prepare conflicts is
             // not allowed while performing writes, so temporarily enforce prepare conflicts.
             EnforcePrepareConflictsBlock enforcePrepare(opCtx);
