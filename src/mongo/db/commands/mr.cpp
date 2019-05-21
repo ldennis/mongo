@@ -765,8 +765,6 @@ long long State::postProcessCollectionNonAtomic(OperationContext* opCtx,
             Helpers::upsert(opCtx, _config.outputOptions.finalNamespace.ns(), o);
             pm.hit();
         }
-        // Need a global lock before accessing the storage engine to enforce prepare conflicts.
-        Lock::GlobalLock globalLock(opCtx, MODE_IX);
         // Make sure we enforce prepare conflicts before writing.
         EnforcePrepareConflictsBlock enforcePrepare(opCtx);
         _db.dropCollection(_config.tempNamespace.ns());
