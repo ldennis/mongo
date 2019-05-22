@@ -223,7 +223,9 @@ private:
 LockMode getLockModeForQuery(OperationContext* opCtx, const boost::optional<NamespaceString>& nss);
 
 /**
- * When in scope, enforces prepare conflicts.
+ * When in scope, enforces prepare conflicts in the storage engine. Reads and writes in this scope
+ * will block on accessing an already updated document which is in prepared state. And they will
+ * unblock after the prepared transaction that performed the update commits/aborts.
  */
 class EnforcePrepareConflictsBlock {
 public:

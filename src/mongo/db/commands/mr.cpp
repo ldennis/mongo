@@ -502,11 +502,11 @@ void State::prepTempCollection() {
     if (!_onDisk)
         return;
 
-    dropTempCollections(
-        _opCtx, _config.tempNamespace, _useIncremental ? _config.incLong : NamespaceString());
-
     // Make sure we enforce prepare conflicts before writing.
     EnforcePrepareConflictsBlock enforcePrepare(_opCtx);
+
+    dropTempCollections(
+        _opCtx, _config.tempNamespace, _useIncremental ? _config.incLong : NamespaceString());
 
     if (_useIncremental) {
         // Create the inc collection and make sure we have index on "0" key. The inc collection is
@@ -706,9 +706,6 @@ long long State::postProcessCollection(OperationContext* opCtx, CurOp* curOp) {
     if (_onDisk == false || _config.outputOptions.outType == Config::INMEMORY)
         return numInMemKeys();
 
-    // Make sure we enforce prepare conflicts before writing.
-    EnforcePrepareConflictsBlock enforcePrepare(opCtx);
-
     bool holdingGlobalLock = false;
     if (_config.outputOptions.outNonAtomic)
         return postProcessCollectionNonAtomic(opCtx, curOp, holdingGlobalLock);
@@ -724,6 +721,9 @@ long long State::postProcessCollection(OperationContext* opCtx, CurOp* curOp) {
 long long State::postProcessCollectionNonAtomic(OperationContext* opCtx,
                                                 CurOp* curOp,
                                                 bool callerHoldsGlobalLock) {
+    // Make sure we enforce prepare conflicts before writing.
+    EnforcePrepareConflictsBlock enforcePrepare(opCtx);
+
     if (_config.outputOptions.finalNamespace == _config.tempNamespace)
         return collectionCount(opCtx, _config.outputOptions.finalNamespace, callerHoldsGlobalLock);
 
