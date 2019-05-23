@@ -231,15 +231,12 @@ class EnforcePrepareConflictsBlock {
 public:
     explicit EnforcePrepareConflictsBlock(OperationContext* opCtx)
         : _opCtx(opCtx), _originalValue(opCtx->recoveryUnit()->getIgnorePrepared()) {
-        dassert(!_opCtx->lockState()->inAWriteUnitOfWork());
-
         // It is illegal to call setIgnorePrepared() while any storage transaction is active.
         // setIgnorePrepared() invariants that there is no active storage transaction.
         _opCtx->recoveryUnit()->setIgnorePrepared(false);
     }
 
     ~EnforcePrepareConflictsBlock() {
-        dassert(!_opCtx->lockState()->inAWriteUnitOfWork());
         // If we are still holding locks, we might still have open storage transactions. However, we
         // did not start with any active transactions when we first entered the scope. And
         // transactions started within this scope cannot be reused outside of the scope. So we need
