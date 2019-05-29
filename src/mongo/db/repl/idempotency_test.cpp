@@ -60,7 +60,7 @@ protected:
 
     std::string getStatesString(const std::vector<CollectionState>& state1,
                                 const std::vector<CollectionState>& state2,
-                                const MultiApplier::OperationPtrs opPtrs) override;
+                                const MultiApplier::OperationPtrs& opPtrs) override;
 
     Status resetState() override;
 
@@ -113,7 +113,7 @@ std::vector<OplogEntry> RandomizedIdempotencyTest::createUpdateSequence(
 
 std::string RandomizedIdempotencyTest::getStatesString(const std::vector<CollectionState>& state1,
                                                        const std::vector<CollectionState>& state2,
-                                                       const MultiApplier::OperationPtrs opPtrs) {
+                                                       const MultiApplier::OperationPtrs& opPtrs) {
     unittest::log() << IdempotencyTest::getStatesString(state1, state2, opPtrs);
     StringBuilder sb;
     sb << "Ran update ops: ";

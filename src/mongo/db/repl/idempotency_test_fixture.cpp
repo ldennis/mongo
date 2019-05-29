@@ -636,7 +636,7 @@ CollectionState IdempotencyTest::validate(const NamespaceString& nss) {
 
 std::string IdempotencyTest::getStatesString(const std::vector<CollectionState>& state1,
                                              const std::vector<CollectionState>& state2,
-                                             const MultiApplier::OperationPtrs opPtrs) {
+                                             const MultiApplier::OperationPtrs& opPtrs) {
     StringBuilder sb;
     sb << "The states:\n";
     for (const auto& s : state1) {
