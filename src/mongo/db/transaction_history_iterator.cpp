@@ -75,6 +75,7 @@ BSONObj findOneOplogEntry(OperationContext* opCtx,
                             << causedBy(statusWithCQ.getStatus()));
     std::unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
 
+    opCtx->recoveryUnit()->setTimestampReadSource(RecoveryUnit::ReadSource::kNoTimestamp);
     AutoGetCollectionForReadCommand ctx(opCtx,
                                         NamespaceString::kRsOplogNamespace,
                                         AutoGetCollection::ViewMode::kViewsForbidden,
