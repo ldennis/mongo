@@ -47,6 +47,34 @@ namespace mongo {
 
 namespace {
 
+class AutoGetOplogForTransactionHistoryIterator {
+public:
+    AutoGetOplogForTransactionHistoryIterator(OperationContext* opCtx)
+        : _readSourceScope(opCtx),
+          _shouldNotConflictWithSecondaryBatchApplicationBlock(opCtx->lockState()),
+          _autoColl(opCtx, NamespaceString::kRsOplogNamespace, MODE_IS),
+          _statsTracker(opCtx,
+                        _autoColl.getNss(),
+                        Top::LockType::ReadLocked,
+                        AutoStatsTracker::LogMode::kUpdateTop,
+                        _autoColl.getDb()->getProfilingLevel(),
+                        Date_t::max()) {
+        opCtx->recoveryUnit()->setTimestampReadSource(RecoveryUnit::ReadSource::kNoTimestamp);
+    };
+
+    Collection* getCollection() const {
+        return _autoColl.getCollection();
+    }
+
+private:
+    ReadSourceScope _readSourceScope;
+    ShouldNotConflictWithSecondaryBatchApplicationBlock
+        _shouldNotConflictWithSecondaryBatchApplicationBlock;
+    AutoGetCollection _autoColl;
+    AutoStatsTracker _statsTracker;
+};
+
+
 /**
  * Query the oplog for an entry with the given timestamp.
  */
@@ -79,15 +107,7 @@ BSONObj findOneOplogEntry(OperationContext* opCtx,
     std::unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
 
     // Traverse the oplog chain with untimestamped reads.
-    ReadSourceScope readSourceScope(opCtx);
-    opCtx->recoveryUnit()->setTimestampReadSource(RecoveryUnit::ReadSource::kNoTimestamp);
-    AutoGetCollectionForReadCommand ctx(opCtx,
-                                        NamespaceString::kRsOplogNamespace,
-                                        AutoGetCollection::ViewMode::kViewsForbidden,
-                                        Date_t::max(),
-                                        AutoStatsTracker::LogMode::kUpdateTop);
-    invariant(opCtx->recoveryUnit()->getTimestampReadSource() ==
-              RecoveryUnit::ReadSource::kNoTimestamp);
+    AutoGetOplogForTransactionHistoryIterator ctx(opCtx);
 
     auto exec =
         uassertStatusOK(getExecutorFind(opCtx, ctx.getCollection(), std::move(cq), permitYield));
