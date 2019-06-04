@@ -27,6 +27,8 @@
  *    it in the license file.
  */
 
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kReplication
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/db_raii.h"
@@ -38,6 +40,7 @@
 #include "mongo/db/repl/oplog_entry.h"
 #include "mongo/db/transaction_history_iterator.h"
 #include "mongo/logger/redaction.h"
+#include "mongo/util/log.h"
 #include "mongo/util/str.h"
 
 namespace mongo {
@@ -75,12 +78,16 @@ BSONObj findOneOplogEntry(OperationContext* opCtx,
                             << causedBy(statusWithCQ.getStatus()));
     std::unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
 
+    // Traverse the oplog chain with untimestamped reads.
+    ReadSourceScope readSourceScope(opCtx);
     opCtx->recoveryUnit()->setTimestampReadSource(RecoveryUnit::ReadSource::kNoTimestamp);
     AutoGetCollectionForReadCommand ctx(opCtx,
                                         NamespaceString::kRsOplogNamespace,
                                         AutoGetCollection::ViewMode::kViewsForbidden,
                                         Date_t::max(),
                                         AutoStatsTracker::LogMode::kUpdateTop);
+    invariant(opCtx->recoveryUnit()->getTimestampReadSource() ==
+              RecoveryUnit::ReadSource::kNoTimestamp);
 
     auto exec =
         uassertStatusOK(getExecutorFind(opCtx, ctx.getCollection(), std::move(cq), permitYield));
@@ -124,6 +131,14 @@ repl::OplogEntry TransactionHistoryIterator::next(OperationContext* opCtx) {
     _nextOpTime = oplogPrevTsOption.value();
 
     return oplogEntry;
+}
+
+repl::OplogEntry TransactionHistoryIterator::nextNoExcept(OperationContext* opCtx) noexcept try {
+    return next(opCtx);
+} catch (...) {
+    // Any exceptions here should be made fatal.
+    severe() << "Caught exception during TransactionHistoryIterator::next: " << exceptionToStatus();
+    std::terminate();
 }
 
 repl::OpTime TransactionHistoryIterator::nextOpTime(OperationContext* opCtx) {
