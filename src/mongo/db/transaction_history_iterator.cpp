@@ -52,25 +52,27 @@ public:
     AutoGetOplogForTransactionHistoryIterator(OperationContext* opCtx)
         : _readSourceScope(opCtx),
           _shouldNotConflictWithSecondaryBatchApplicationBlock(opCtx->lockState()),
-          _autoColl(opCtx, NamespaceString::kRsOplogNamespace, MODE_IS),
+          _autoDb(opCtx, NamespaceString::kRsOplogNamespace.db(), MODE_IS),
+          _oplog(_autoDb.getDb()->getCollection(opCtx, NamespaceString::kRsOplogNamespace)),
           _statsTracker(opCtx,
-                        _autoColl.getNss(),
+                        NamespaceString::kRsOplogNamespace,
                         Top::LockType::ReadLocked,
                         AutoStatsTracker::LogMode::kUpdateTop,
-                        _autoColl.getDb()->getProfilingLevel(),
+                        _autoDb.getDb()->getProfilingLevel(),
                         Date_t::max()) {
         opCtx->recoveryUnit()->setTimestampReadSource(RecoveryUnit::ReadSource::kNoTimestamp);
     };
 
     Collection* getCollection() const {
-        return _autoColl.getCollection();
+        return _oplog;
     }
 
 private:
     ReadSourceScope _readSourceScope;
     ShouldNotConflictWithSecondaryBatchApplicationBlock
         _shouldNotConflictWithSecondaryBatchApplicationBlock;
-    AutoGetCollection _autoColl;
+    AutoGetDb _autoDb;
+    Collection* _oplog;
     AutoStatsTracker _statsTracker;
 };
 
