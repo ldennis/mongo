@@ -62,6 +62,10 @@ public:
     virtual repl::OpTime nextOpTime(OperationContext* opCtx) = 0;
 };
 
+/**
+ * Oplog traversal is untimestamped. It can only be used before the recovery unit becomes active or
+ * the current read source is already untimestamped.
+ */
 class TransactionHistoryIterator : public TransactionHistoryIteratorBase {
 public:
     /**

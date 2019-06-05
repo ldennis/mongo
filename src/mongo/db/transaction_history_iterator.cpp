@@ -50,7 +50,8 @@ namespace {
 class AutoGetOplogForTransactionHistoryIterator {
 public:
     AutoGetOplogForTransactionHistoryIterator(OperationContext* opCtx)
-        : _readSourceScope(opCtx),
+        : _opCtx(opCtx),
+          _originalReadSource(opCtx->recoveryUnit()->getTimestampReadSource()),
           _shouldNotConflictWithSecondaryBatchApplicationBlock(opCtx->lockState()),
           _autoDb(opCtx, NamespaceString::kRsOplogNamespace.db(), MODE_IS),
           _oplog(_autoDb.getDb()->getCollection(opCtx, NamespaceString::kRsOplogNamespace)),
@@ -60,15 +61,42 @@ public:
                         AutoStatsTracker::LogMode::kUpdateTop,
                         _autoDb.getDb()->getProfilingLevel(),
                         Date_t::max()) {
-        opCtx->recoveryUnit()->setTimestampReadSource(RecoveryUnit::ReadSource::kNoTimestamp);
+
+        if (_originalReadSource == RecoveryUnit::ReadSource::kProvided) {
+            _originalReadTimestamp = *_opCtx->recoveryUnit()->getPointInTimeReadTimestamp();
+        }
+        // Explicitly start oplog read without a timestamp. setTimestampReadSource() will invariant
+        // that there is no active storage transaction or the current read source is already
+        // kNoTimestamp.
+        _opCtx->recoveryUnit()->setTimestampReadSource(RecoveryUnit::ReadSource::kNoTimestamp);
     };
 
     Collection* getCollection() const {
         return _oplog;
     }
 
+    ~AutoGetOplogForTransactionHistoryIterator() {
+        // If we have changed the read source in the constructor and we are still holding locks on
+        // exit, we might still have open storage transactions. However, we did not start with any
+        // active transactions when we first entered the scope. And transactions started within this
+        // scope cannot be reused outside of the scope. So we need to call abandonSnapshot() to
+        // close any open transactions on destruction.
+        if (_originalReadSource != RecoveryUnit::ReadSource::kNoTimestamp &&
+            _opCtx->lockState()->isLocked())
+            _opCtx->recoveryUnit()->abandonSnapshot();
+        // Reset read source to what it was before.
+        if (_originalReadSource == RecoveryUnit::ReadSource::kProvided) {
+            _opCtx->recoveryUnit()->setTimestampReadSource(_originalReadSource,
+                                                           _originalReadTimestamp);
+        } else {
+            _opCtx->recoveryUnit()->setTimestampReadSource(_originalReadSource);
+        }
+    }
+
 private:
-    ReadSourceScope _readSourceScope;
+    OperationContext* _opCtx;
+    RecoveryUnit::ReadSource _originalReadSource;
+    Timestamp _originalReadTimestamp;
     ShouldNotConflictWithSecondaryBatchApplicationBlock
         _shouldNotConflictWithSecondaryBatchApplicationBlock;
     AutoGetDb _autoDb;
@@ -108,7 +136,6 @@ BSONObj findOneOplogEntry(OperationContext* opCtx,
                             << causedBy(statusWithCQ.getStatus()));
     std::unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
 
-    // Traverse the oplog chain with untimestamped reads.
     AutoGetOplogForTransactionHistoryIterator ctx(opCtx);
 
     auto exec =
