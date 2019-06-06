@@ -71,7 +71,7 @@ StringData _todb(StringData ns) {
 
 Database* DatabaseHolderImpl::getDb(OperationContext* opCtx, StringData ns) const {
     const StringData db = _todb(ns);
-    invariant(opCtx->lockState()->isDbLockedForMode(db, MODE_IS));
+    // invariant(opCtx->lockState()->isDbLockedForMode(db, MODE_IS));
 
     stdx::lock_guard<SimpleMutex> lk(_m);
     DBs::const_iterator it = _dbs.find(db);

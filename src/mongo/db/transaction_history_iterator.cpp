@@ -37,73 +37,15 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/query/get_executor.h"
 #include "mongo/db/query/query_request.h"
+#include "mongo/db/repl/local_oplog_info.h"
 #include "mongo/db/repl/oplog_entry.h"
 #include "mongo/db/transaction_history_iterator.h"
 #include "mongo/logger/redaction.h"
-#include "mongo/util/log.h"
 #include "mongo/util/str.h"
 
 namespace mongo {
 
 namespace {
-
-class AutoGetOplogForTransactionHistoryIterator {
-public:
-    AutoGetOplogForTransactionHistoryIterator(OperationContext* opCtx)
-        : _opCtx(opCtx),
-          _originalReadSource(opCtx->recoveryUnit()->getTimestampReadSource()),
-          _shouldNotConflictWithSecondaryBatchApplicationBlock(opCtx->lockState()),
-          _autoDb(opCtx, NamespaceString::kRsOplogNamespace.db(), MODE_IS),
-          _oplog(_autoDb.getDb()->getCollection(opCtx, NamespaceString::kRsOplogNamespace)),
-          _statsTracker(opCtx,
-                        NamespaceString::kRsOplogNamespace,
-                        Top::LockType::ReadLocked,
-                        AutoStatsTracker::LogMode::kUpdateTop,
-                        _autoDb.getDb()->getProfilingLevel(),
-                        Date_t::max()) {
-
-        if (_originalReadSource == RecoveryUnit::ReadSource::kProvided) {
-            _originalReadTimestamp = *_opCtx->recoveryUnit()->getPointInTimeReadTimestamp();
-        }
-        // Explicitly start oplog read without a timestamp. setTimestampReadSource() will invariant
-        // that there is no active storage transaction or the current read source is already
-        // kNoTimestamp.
-        _opCtx->recoveryUnit()->setTimestampReadSource(RecoveryUnit::ReadSource::kNoTimestamp);
-    };
-
-    Collection* getCollection() const {
-        return _oplog;
-    }
-
-    ~AutoGetOplogForTransactionHistoryIterator() {
-        // If we have changed the read source in the constructor and we are still holding locks on
-        // exit, we might still have open storage transactions. However, we did not start with any
-        // active transactions when we first entered the scope. And transactions started within this
-        // scope cannot be reused outside of the scope. So we need to call abandonSnapshot() to
-        // close any open transactions on destruction.
-        if (_originalReadSource != RecoveryUnit::ReadSource::kNoTimestamp &&
-            _opCtx->lockState()->isLocked())
-            _opCtx->recoveryUnit()->abandonSnapshot();
-        // Reset read source to what it was before.
-        if (_originalReadSource == RecoveryUnit::ReadSource::kProvided) {
-            _opCtx->recoveryUnit()->setTimestampReadSource(_originalReadSource,
-                                                           _originalReadTimestamp);
-        } else {
-            _opCtx->recoveryUnit()->setTimestampReadSource(_originalReadSource);
-        }
-    }
-
-private:
-    OperationContext* _opCtx;
-    RecoveryUnit::ReadSource _originalReadSource;
-    Timestamp _originalReadTimestamp;
-    ShouldNotConflictWithSecondaryBatchApplicationBlock
-        _shouldNotConflictWithSecondaryBatchApplicationBlock;
-    AutoGetDb _autoDb;
-    Collection* _oplog;
-    AutoStatsTracker _statsTracker;
-};
-
 
 /**
  * Query the oplog for an entry with the given timestamp.
@@ -136,10 +78,11 @@ BSONObj findOneOplogEntry(OperationContext* opCtx,
                             << causedBy(statusWithCQ.getStatus()));
     std::unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
 
-    AutoGetOplogForTransactionHistoryIterator ctx(opCtx);
+    ShouldNotConflictWithSecondaryBatchApplicationBlock noPBWMBlock(opCtx->lockState());
+    Lock::GlobalLock globalLock(opCtx, MODE_IS);
 
-    auto exec =
-        uassertStatusOK(getExecutorFind(opCtx, ctx.getCollection(), std::move(cq), permitYield));
+    auto exec = uassertStatusOK(getExecutorFind(
+        opCtx, repl::LocalOplogInfo::get(opCtx)->getCollection(), std::move(cq), permitYield));
 
     auto getNextResult = exec->getNext(&oplogBSON, nullptr);
     uassert(ErrorCodes::IncompleteTransactionHistory,
@@ -182,12 +125,8 @@ repl::OplogEntry TransactionHistoryIterator::next(OperationContext* opCtx) {
     return oplogEntry;
 }
 
-repl::OplogEntry TransactionHistoryIterator::nextNoExcept(OperationContext* opCtx) noexcept try {
+repl::OplogEntry TransactionHistoryIterator::nextNoExcept(OperationContext* opCtx) noexcept {
     return next(opCtx);
-} catch (...) {
-    // Any exceptions here should be made fatal.
-    severe() << "Caught exception during TransactionHistoryIterator::next: " << exceptionToStatus();
-    std::terminate();
 }
 
 repl::OpTime TransactionHistoryIterator::nextOpTime(OperationContext* opCtx) {
