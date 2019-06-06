@@ -210,6 +210,9 @@ ReplicationRecoveryImpl::ReplicationRecoveryImpl(StorageInterface* storageInterf
 
 void ReplicationRecoveryImpl::recoverFromOplog(OperationContext* opCtx,
                                                boost::optional<Timestamp> stableTimestamp) try {
+    // Initialize the cached pointer to the oplog collection.
+    acquireOplogCollectionForLogging(opCtx);
+
     if (_consistencyMarkers->getInitialSyncFlag(opCtx)) {
         log() << "No recovery needed. Initial sync flag set.";
         return;  // Initial Sync will take over so no cleanup is needed.

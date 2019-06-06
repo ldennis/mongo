@@ -78,9 +78,10 @@ BSONObj findOneOplogEntry(OperationContext* opCtx,
 
     ShouldNotConflictWithSecondaryBatchApplicationBlock noPBWMBlock(opCtx->lockState());
     Lock::GlobalLock globalLock(opCtx, MODE_IS);
+    auto oplog = repl::LocalOplogInfo::get(opCtx)->getCollection();
+    invariant(oplog);
 
-    auto exec = uassertStatusOK(getExecutorFind(
-        opCtx, repl::LocalOplogInfo::get(opCtx)->getCollection(), std::move(cq), permitYield));
+    auto exec = uassertStatusOK(getExecutorFind(opCtx, oplog, std::move(cq), permitYield));
 
     auto getNextResult = exec->getNext(&oplogBSON, nullptr);
     uassert(ErrorCodes::IncompleteTransactionHistory,

@@ -791,9 +791,6 @@ void ReplicationCoordinatorImpl::startup(OperationContext* opCtx) {
                 fassertFailedNoTrace(50806);
             }
 
-            // Initialize the cached pointer to the oplog collection, for writing to the oplog.
-            acquireOplogCollectionForLogging(opCtx);
-
             // We pass in "none" for the stable timestamp so that recoverFromOplog asks storage
             // for the recoveryTimestamp just like on replica set recovery.
             const auto stableTimestamp = boost::none;
@@ -819,9 +816,6 @@ void ReplicationCoordinatorImpl::startup(OperationContext* opCtx) {
         _topCoord->setStorageEngineSupportsReadCommitted(
             _externalState->isReadCommittedSupportedByStorageEngine(opCtx));
     }
-
-    // Initialize the cached pointer to the oplog collection, for writing to the oplog.
-    acquireOplogCollectionForLogging(opCtx);
 
     _replExecutor->startup();
 

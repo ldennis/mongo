@@ -191,6 +191,8 @@ private:
 
         repl::DropPendingCollectionReaper::set(
             service, stdx::make_unique<repl::DropPendingCollectionReaper>(_storageInterface));
+
+        setOplogCollectionName(service);
     }
 
     void tearDown() override {
