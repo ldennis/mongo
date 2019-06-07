@@ -104,7 +104,7 @@ Status _applyTransactionFromOplogChain(OperationContext* opCtx,
         invariant(prepareOpTime);
         TransactionHistoryIterator iter(prepareOpTime.get());
         invariant(iter.hasNext());
-        const auto prepareOplogEntry = iter.nextNoExcept(opCtx);
+        const auto prepareOplogEntry = iter.nextFatalOnErrors(opCtx);
         ops = readTransactionOperationsFromOplogChain(opCtx, prepareOplogEntry, {});
     }
 
@@ -242,7 +242,7 @@ repl::MultiApplier::Operations readTransactionOperationsFromOplogChain(
     // First retrieve and transform the ops from the oplog, which will be retrieved in reverse
     // order.
     while (iter.hasNext()) {
-        const auto& operationEntry = iter.nextNoExcept(opCtx);
+        const auto& operationEntry = iter.nextFatalOnErrors(opCtx);
         invariant(operationEntry.isPartialTransaction());
         auto prevOpsEnd = ops.size();
         repl::ApplyOps::extractOperationsTo(operationEntry, commitOrPrepareObj, &ops);
@@ -417,7 +417,7 @@ void reconstructPreparedTransactions(OperationContext* opCtx, repl::OplogApplica
         invariant(!prepareOpTime.isNull());
         TransactionHistoryIterator iter(prepareOpTime);
         invariant(iter.hasNext());
-        auto prepareOplogEntry = iter.nextNoExcept(opCtx);
+        auto prepareOplogEntry = iter.nextFatalOnErrors(opCtx);
 
         {
             // Make a new opCtx so that we can set the lsid when applying the prepare transaction

@@ -124,8 +124,10 @@ repl::OplogEntry TransactionHistoryIterator::next(OperationContext* opCtx) {
     return oplogEntry;
 }
 
-repl::OplogEntry TransactionHistoryIterator::nextNoExcept(OperationContext* opCtx) noexcept {
+repl::OplogEntry TransactionHistoryIterator::nextFatalOnErrors(OperationContext* opCtx) try {
     return next(opCtx);
+} catch (const DBException& ex) {
+    fassertFailedWithStatus(31145, ex.toStatus());
 }
 
 repl::OpTime TransactionHistoryIterator::nextOpTime(OperationContext* opCtx) {

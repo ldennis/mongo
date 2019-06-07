@@ -75,9 +75,9 @@ public:
     repl::OpTime nextOpTime(OperationContext* opCtx) override;
 
     /**
-     * Same as next() but make exceptions fatal.
+     * Same as next() but makes exceptions fatal.
      */
-    repl::OplogEntry nextNoExcept(OperationContext* opCtx) noexcept;
+    repl::OplogEntry nextFatalOnErrors(OperationContext* opCtx);
 
 private:
     // Clients can set this to allow PlanExecutors created by this TransactionHistoryIterator to
