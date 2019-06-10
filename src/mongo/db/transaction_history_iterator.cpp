@@ -29,6 +29,7 @@
 
 #include "mongo/platform/basic.h"
 
+#include "mongo/db/catalog/database_holder.h"
 #include "mongo/db/db_raii.h"
 #include "mongo/db/exec/working_set_common.h"
 #include "mongo/db/namespace_string.h"
@@ -78,6 +79,14 @@ BSONObj findOneOplogEntry(OperationContext* opCtx,
 
     ShouldNotConflictWithSecondaryBatchApplicationBlock noPBWMBlock(opCtx->lockState());
     Lock::GlobalLock globalLock(opCtx, MODE_IS);
+    const auto localDb = DatabaseHolder::get(opCtx)->getDb(opCtx, "local");
+    invariant(localDb);
+    AutoStatsTracker statsTracker(opCtx,
+                                  NamespaceString::kRsOplogNamespace,
+                                  Top::LockType::ReadLocked,
+                                  AutoStatsTracker::LogMode::kUpdateTop,
+                                  localDb->getProfilingLevel(),
+                                  Date_t::max());
     auto oplog = repl::LocalOplogInfo::get(opCtx)->getCollection();
     invariant(oplog);
 
