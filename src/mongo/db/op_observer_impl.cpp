@@ -1226,16 +1226,16 @@ void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
                                             MutableOplogEntry& oplogEntry,
                                             DurableTxnStateEnum durableState) {
     const NamespaceString cmdNss{"admin", "$cmd"};
-    oplogEntry.getDurableReplOperation().setNss(cmdNss);
+    oplogEntry.setNss(cmdNss);
 
-    oplogEntry.getOperationSessionInfo().setSessionId(*opCtx->getLogicalSessionId());
-    oplogEntry.getOperationSessionInfo().setTxnNumber(*opCtx->getTxnNumber());
+    oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
+    oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
     oplogEntry.setPrevWriteOpTimeInTransaction(
         TransactionParticipant::get(opCtx).getLastWriteOpTime());
 
     const auto wallClockTime = getWallClockTimeForOpLog(opCtx);
     oplogEntry.setWallClockTime(wallClockTime);
-    oplogEntry.getDurableReplOperation().setOpType(repl::OpTypeEnum::kCommand);
+    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
 
     // There should not be a parent WUOW outside of this one. This guarantees the safety of the
     // write conflict retry loop.
@@ -1337,7 +1337,7 @@ void OpObserverImpl::onPreparedTransactionCommit(
 
     CommitTransactionOplogObject cmdObj;
     cmdObj.setCommitTimestamp(commitTimestamp);
-    oplogEntry.getDurableReplOperation().setObject(std::move(cmdObj.toBSON()));
+    oplogEntry.setObject(cmdObj.toBSON());
 
     logCommitOrAbortForPreparedTransaction(opCtx, oplogEntry, DurableTxnStateEnum::kCommitted);
 }
@@ -1459,7 +1459,7 @@ void OpObserverImpl::onTransactionAbort(OperationContext* opCtx,
     oplogEntry.setOpTime(*abortOplogEntryOpTime);
 
     AbortTransactionOplogObject cmdObj;
-    oplogEntry.getDurableReplOperation().setObject(std::move(cmdObj.toBSON()));
+    oplogEntry.setObject(cmdObj.toBSON());
 
     logCommitOrAbortForPreparedTransaction(opCtx, oplogEntry, DurableTxnStateEnum::kAborted);
 }
