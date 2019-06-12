@@ -107,6 +107,18 @@ repl::OpTime logOperation(OperationContext* opCtx,
     return opTime;
 }
 
+inline void setOplogLink(MutableOplogEntry& oplogEntry, const repl::OplogLink& oplogLink) {
+    oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
+
+    if (!oplogLink.preImageOpTime.isNull()) {
+        oplogEntry.setPreImageOpTime(oplogLink.preImageOpTime);
+    }
+
+    if (!oplogLink.postImageOpTime.isNull()) {
+        oplogEntry.setPostImageOpTime(oplogLink.postImageOpTime);
+    }
+}
+
 inline repl::OpTime logOperation(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     auto& times = OpObserver::Times::get(opCtx).reservedOpTimes;
     auto opTime = repl::logOp(opCtx, oplogEntry);
@@ -190,32 +202,29 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
         storeObj = args.updateArgs.updatedDoc;
     }
 
-    OperationSessionInfo sessionInfo;
+    MutableOplogEntry oplogEntry;
+    oplogEntry.setNss(args.nss);
+    oplogEntry.setUuid(args.uuid);
+
     repl::OplogLink oplogLink;
 
     const auto txnParticipant = TransactionParticipant::get(opCtx);
     if (txnParticipant) {
-        sessionInfo.setSessionId(*opCtx->getLogicalSessionId());
-        sessionInfo.setTxnNumber(*opCtx->getTxnNumber());
+        oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
+        oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
     }
+    oplogEntry.setStatementId(args.updateArgs.stmtId);
 
     OpTimeBundle opTimes;
     opTimes.wallClockTime = getWallClockTimeForOpLog(opCtx);
+    oplogEntry.setWallClockTime(opTimes.wallClockTime);
 
     if (!storeObj.isEmpty() && opCtx->getTxnNumber()) {
-        auto noteUpdateOpTime = logOperation(opCtx,
-                                             "n",
-                                             args.nss,
-                                             args.uuid,
-                                             storeObj,
-                                             nullptr,
-                                             false,
-                                             opTimes.wallClockTime,
-                                             sessionInfo,
-                                             args.updateArgs.stmtId,
-                                             {},
-                                             OplogSlot());
+        oplogEntry.setOpType(repl::OpTypeEnum::kNoop);
+        oplogEntry.setObject(std::move(storeObj));
+        oplogEntry.setOpTime(OplogSlot());
+        auto noteUpdateOpTime = logOperation(opCtx, oplogEntry);
 
         opTimes.prePostImageOpTime = noteUpdateOpTime;
 
@@ -227,18 +236,14 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
         }
     }
 
-    opTimes.writeOpTime = logOperation(opCtx,
-                                       "u",
-                                       args.nss,
-                                       args.uuid,
-                                       args.updateArgs.update,
-                                       &args.updateArgs.criteria,
-                                       args.updateArgs.fromMigrate,
-                                       opTimes.wallClockTime,
-                                       sessionInfo,
-                                       args.updateArgs.stmtId,
-                                       oplogLink,
-                                       OplogSlot());
+    oplogEntry.setOpType(repl::OpTypeEnum::kNoop);
+    oplogEntry.setObject(args.updateArgs.update);
+    oplogEntry.setObject2(args.updateArgs.criteria);
+    if (args.updateArgs.fromMigrate)
+        oplogEntry.setFromMigrate(true);
+    setOplogLink(oplogEntry, oplogLink);
+    oplogEntry.setOpTime(OplogSlot());
+    opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
 
     return opTimes;
 }
@@ -1225,17 +1230,19 @@ int logOplogEntriesForTransaction(OperationContext* opCtx,
 void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
                                             MutableOplogEntry& oplogEntry,
                                             DurableTxnStateEnum durableState) {
+    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
+
     const NamespaceString cmdNss{"admin", "$cmd"};
     oplogEntry.setNss(cmdNss);
 
     oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
     oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
+
     oplogEntry.setPrevWriteOpTimeInTransaction(
         TransactionParticipant::get(opCtx).getLastWriteOpTime());
 
     const auto wallClockTime = getWallClockTimeForOpLog(opCtx);
     oplogEntry.setWallClockTime(wallClockTime);
-    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
 
     // There should not be a parent WUOW outside of this one. This guarantees the safety of the
     // write conflict retry loop.
