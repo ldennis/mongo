@@ -310,14 +310,6 @@ int OplogEntry::getRawObjSizeBytes() const {
     return _raw.objsize();
 }
 
-OpTime OplogEntry::getOpTime() const {
-    long long term = OpTime::kUninitializedTerm;
-    if (getTerm()) {
-        term = getTerm().get();
-    }
-    return OpTime(getTimestamp(), term);
-}
-
 std::string OplogEntry::toString() const {
     return _raw.toString();
 }
@@ -328,6 +320,25 @@ std::ostream& operator<<(std::ostream& s, const OplogEntry& o) {
 
 std::ostream& operator<<(std::ostream& s, const ReplOperation& o) {
     return s << o.toBSON().toString();
+}
+
+MutableOplogEntry::MutableOplogEntry() : OplogEntryBase() {
+    // Default version to OplogEntry::kOplogVersion.
+    setVersion(OplogEntry::kOplogVersion);
+}
+
+void MutableOplogEntry::setOpTime(const OpTime& opTime) {
+    setTimestamp(opTime.getTimestamp());
+    if (opTime.getTerm() != OpTime::kUninitializedTerm)
+        setTerm(opTime.getTerm());
+}
+
+OpTime MutableOplogEntry::getOpTime() const {
+    long long term = OpTime::kUninitializedTerm;
+    if (getTerm()) {
+        term = getTerm().get();
+    }
+    return OpTime(getTimestamp(), term);
 }
 
 }  // namespace repl

@@ -159,6 +159,26 @@ private:
     BSONObj _oField;
 };
 
+class OplogDocWriterNew final : public DocWriter {
+public:
+    OplogDocWriterNew(const MutableOplogEntry& oplogEntry) : _op(oplogEntry.toBSON()) {}
+
+    void writeDocument(char* start) const {
+        char* buf = start;
+
+        memcpy(buf, _op.objdata(), _op.objsize());
+
+        DataView(buf).write<LittleEndian<int>>(documentSize());
+    }
+
+    size_t documentSize() const {
+        return _op.objsize();
+    }
+
+private:
+    BSONObj _op;
+};
+
 bool shouldBuildInForeground(OperationContext* opCtx,
                              const BSONObj& index,
                              const NamespaceString& indexNss,
@@ -548,6 +568,58 @@ OpTime logOp(OperationContext* opCtx,
     const DocWriter* basePtr = &writer;
     auto timestamp = slot.getTimestamp();
     _logOpsInner(opCtx, nss, &basePtr, &timestamp, 1, oplog, slot, wallClockTime);
+    wuow.commit();
+    return slot;
+}
+
+OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
+    // All collections should have UUIDs now, so all insert, update, and delete oplog entries should
+    // also have uuids. Some no-op (n) and command (c) entries may still elide the uuid field.
+    invariant(oplogEntry.getUuid() || oplogEntry.getOpType() == OpTypeEnum::kNoop ||
+                  oplogEntry.getOpType() == OpTypeEnum::kCommand,
+              str::stream() << "Expected uuid for logOp with oplog entry: "
+                            << oplogEntry.toBSON().toString());
+
+    auto replCoord = ReplicationCoordinator::get(opCtx);
+    // For commands, the test below is on the command ns and therefore does not check for
+    // specific namespaces such as system.profile. This is the caller's responsibility.
+    if (replCoord->isOplogDisabledFor(opCtx, oplogEntry.getNss())) {
+        auto statementId = oplogEntry.getStatementId();
+        invariant(statementId);
+        uassert(ErrorCodes::IllegalOperation,
+                str::stream() << "retryable writes is not supported for unreplicated ns: "
+                              << oplogEntry.getNss().ns(),
+                *statementId == kUninitializedStmtId);
+        return {};
+    }
+
+    OplogSlot slot = oplogEntry.getOpTime();
+    Timestamp timestamp = slot.getTimestamp();
+
+    auto oplogInfo = LocalOplogInfo::get(opCtx);
+
+    // Obtain Collection exclusive intent write lock for non-document-locking storage engines.
+    boost::optional<Lock::DBLock> dbWriteLock;
+    boost::optional<Lock::CollectionLock> collWriteLock;
+    if (!opCtx->getServiceContext()->getStorageEngine()->supportsDocLocking()) {
+        dbWriteLock.emplace(opCtx, NamespaceString::kLocalDb, MODE_IX);
+        collWriteLock.emplace(opCtx, oplogInfo->getOplogCollectionName(), MODE_IX);
+    }
+
+    WriteUnitOfWork wuow(opCtx);
+    if (slot.isNull()) {
+        slot = oplogInfo->getNextOpTimes(opCtx, 1U)[0];
+        timestamp = slot.getTimestamp();
+        oplogEntry.setOpTime(slot);
+    }
+
+    auto oplog = oplogInfo->getCollection();
+    auto wallClockTime = oplogEntry.getWallClockTime();
+    invariant(wallClockTime);
+
+    OplogDocWriterNew writer(oplogEntry);
+    const DocWriter* basePtr = &writer;
+    _logOpsInner(opCtx, oplogEntry.getNss(), &basePtr, &timestamp, 1, oplog, slot, *wallClockTime);
     wuow.commit();
     return slot;
 }

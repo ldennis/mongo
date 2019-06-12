@@ -107,6 +107,13 @@ repl::OpTime logOperation(OperationContext* opCtx,
     return opTime;
 }
 
+inline repl::OpTime logOperation(OperationContext* opCtx, repl::MutableOplogEntry& oplogEntry) {
+    auto& times = OpObserver::Times::get(opCtx).reservedOpTimes;
+    auto opTime = repl::logOp(opCtx, oplogEntry);
+    times.push_back(opTime);
+    return opTime;
+}
+
 /**
  * Updates the session state with the last write timestamp and transaction for that session.
  *
@@ -1215,20 +1222,22 @@ int logOplogEntriesForTransaction(OperationContext* opCtx,
 }
 
 void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
+                                            repl::MutableOplogEntry& oplogEntry,
                                             const OplogSlot& oplogSlot,
-                                            const BSONObj& objectField,
                                             DurableTxnStateEnum durableState) {
     const NamespaceString cmdNss{"admin", "$cmd"};
+    oplogEntry.getDurableReplOperation().setNss(cmdNss);
 
-    OperationSessionInfo sessionInfo;
-    repl::OplogLink oplogLink;
-    sessionInfo.setSessionId(*opCtx->getLogicalSessionId());
-    sessionInfo.setTxnNumber(*opCtx->getTxnNumber());
+    oplogEntry.setOpTime(oplogSlot);
 
-    auto txnParticipant = TransactionParticipant::get(opCtx);
-    oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
+    oplogEntry.getOperationSessionInfo().setSessionId(*opCtx->getLogicalSessionId());
+    oplogEntry.getOperationSessionInfo().setTxnNumber(*opCtx->getTxnNumber());
+    oplogEntry.setPrevWriteOpTimeInTransaction(
+        TransactionParticipant::get(opCtx).getLastWriteOpTime());
 
     const auto wallClockTime = getWallClockTimeForOpLog(opCtx);
+    oplogEntry.setWallClockTime(wallClockTime);
+    oplogEntry.getDurableReplOperation().setOpType(repl::OpTypeEnum::kCommand);
 
     // There should not be a parent WUOW outside of this one. This guarantees the safety of the
     // write conflict retry loop.
@@ -1247,18 +1256,7 @@ void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
             invariant(opCtx->lockState()->isWriteLocked());
 
             WriteUnitOfWork wuow(opCtx);
-            const auto oplogOpTime = logOperation(opCtx,
-                                                  "c",
-                                                  cmdNss,
-                                                  {} /* uuid */,
-                                                  objectField,
-                                                  nullptr /* o2 */,
-                                                  false /* fromMigrate */,
-                                                  wallClockTime,
-                                                  sessionInfo,
-                                                  boost::none /* stmtId */,
-                                                  oplogLink,
-                                                  oplogSlot);
+            const auto oplogOpTime = logOperation(opCtx, oplogEntry);
             invariant(oplogSlot.isNull() || oplogSlot == oplogOpTime);
 
             onWriteOpCompleted(opCtx,
@@ -1338,8 +1336,10 @@ void OpObserverImpl::onPreparedTransactionCommit(
 
     CommitTransactionOplogObject cmdObj;
     cmdObj.setCommitTimestamp(commitTimestamp);
+    repl::MutableOplogEntry oplogEntry;
+    oplogEntry.getDurableReplOperation().setObject(std::move(cmdObj.toBSON()));
     logCommitOrAbortForPreparedTransaction(
-        opCtx, commitOplogEntryOpTime, cmdObj.toBSON(), DurableTxnStateEnum::kCommitted);
+        opCtx, oplogEntry, commitOplogEntryOpTime, DurableTxnStateEnum::kCommitted);
 }
 
 void OpObserverImpl::onTransactionPrepare(OperationContext* opCtx,
@@ -1456,8 +1456,10 @@ void OpObserverImpl::onTransactionAbort(OperationContext* opCtx,
     }
 
     AbortTransactionOplogObject cmdObj;
+    repl::MutableOplogEntry oplogEntry;
+    oplogEntry.getDurableReplOperation().setObject(std::move(cmdObj.toBSON()));
     logCommitOrAbortForPreparedTransaction(
-        opCtx, *abortOplogEntryOpTime, cmdObj.toBSON(), DurableTxnStateEnum::kAborted);
+        opCtx, oplogEntry, *abortOplogEntryOpTime, DurableTxnStateEnum::kAborted);
 }
 
 void OpObserverImpl::onReplicationRollback(OperationContext* opCtx,
