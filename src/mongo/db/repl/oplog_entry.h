@@ -87,10 +87,42 @@ public:
 
     MutableOplogEntry();
 
+    void setSessionId(boost::optional<LogicalSessionId> value) & {
+        getOperationSessionInfo().setSessionId(std::move(value));
+    }
+
+    void setTxnNumber(boost::optional<std::int64_t> value) & {
+        getOperationSessionInfo().setTxnNumber(std::move(value));
+    }
+
+    void setOpType(OpTypeEnum value) & {
+        getDurableReplOperation().setOpType(std::move(value));
+    }
+
+    void setNss(NamespaceString value) & {
+        getDurableReplOperation().setNss(std::move(value));
+    }
+
+    void setUuid(boost::optional<UUID> value) & {
+        getDurableReplOperation().setUuid(std::move(value));
+    }
+
+    void setObject(mongo::BSONObj value) & {
+        getDurableReplOperation().setObject(std::move(value));
+    }
+
+    void setObject2(boost::optional<mongo::BSONObj> value) & {
+        getDurableReplOperation().setObject2(std::move(value));
+    }
+
+    void setUpsert(boost::optional<bool> value) & {
+        getDurableReplOperation().setUpsert(std::move(value));
+    }
+
     /**
      * Sets the OpTime of the oplog entry.
      */
-    void setOpTime(const OpTime& opTime);
+    void setOpTime(const OpTime& opTime) &;
 
     /**
      * Returns the OpTime of the oplog entry.

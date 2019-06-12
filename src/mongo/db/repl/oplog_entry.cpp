@@ -185,7 +185,7 @@ MutableOplogEntry::MutableOplogEntry() : OplogEntryBase() {
     setVersion(kOplogVersion);
 }
 
-void MutableOplogEntry::setOpTime(const OpTime& opTime) {
+void MutableOplogEntry::setOpTime(const OpTime& opTime)& {
     setTimestamp(opTime.getTimestamp());
     if (opTime.getTerm() != OpTime::kUninitializedTerm)
         setTerm(opTime.getTerm());
