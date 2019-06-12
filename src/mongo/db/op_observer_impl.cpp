@@ -66,6 +66,7 @@
 
 namespace mongo {
 using repl::OplogEntry;
+using repl::MutableOplogEntry;
 
 namespace {
 
@@ -107,7 +108,7 @@ repl::OpTime logOperation(OperationContext* opCtx,
     return opTime;
 }
 
-inline repl::OpTime logOperation(OperationContext* opCtx, repl::MutableOplogEntry& oplogEntry) {
+inline repl::OpTime logOperation(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     auto& times = OpObserver::Times::get(opCtx).reservedOpTimes;
     auto opTime = repl::logOp(opCtx, oplogEntry);
     times.push_back(opTime);
@@ -486,7 +487,7 @@ void OpObserverImpl::onInserts(OperationContext* opCtx,
             return;
         }
         for (auto iter = first; iter != last; iter++) {
-            auto operation = OplogEntry::makeInsertOperation(nss, uuid, iter->doc);
+            auto operation = MutableOplogEntry::makeInsertOperation(nss, uuid, iter->doc);
             txnParticipant.addTransactionOperation(opCtx, operation);
         }
     } else {
@@ -561,7 +562,7 @@ void OpObserverImpl::onUpdate(OperationContext* opCtx, const OplogUpdateEntryArg
 
     OpTimeBundle opTime;
     if (inMultiDocumentTransaction) {
-        auto operation = OplogEntry::makeUpdateOperation(
+        auto operation = MutableOplogEntry::makeUpdateOperation(
             args.nss, args.uuid, args.updateArgs.update, args.updateArgs.criteria);
         txnParticipant.addTransactionOperation(opCtx, operation);
     } else {
@@ -622,8 +623,8 @@ void OpObserverImpl::onDelete(OperationContext* opCtx,
 
     OpTimeBundle opTime;
     if (inMultiDocumentTransaction) {
-        auto operation =
-            OplogEntry::makeDeleteOperation(nss, uuid, deletedDoc ? deletedDoc.get() : documentKey);
+        auto operation = MutableOplogEntry::makeDeleteOperation(
+            nss, uuid, deletedDoc ? deletedDoc.get() : documentKey);
         txnParticipant.addTransactionOperation(opCtx, operation);
     } else {
         opTime = replLogDelete(opCtx, nss, uuid, stmtId, fromMigrate, deletedDoc);
@@ -1210,7 +1211,7 @@ int logOplogEntriesForTransaction(OperationContext* opCtx,
 }
 
 void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
-                                            repl::MutableOplogEntry& oplogEntry,
+                                            MutableOplogEntry& oplogEntry,
                                             const OplogSlot& oplogSlot,
                                             DurableTxnStateEnum durableState) {
     const NamespaceString cmdNss{"admin", "$cmd"};
@@ -1322,7 +1323,7 @@ void OpObserverImpl::onPreparedTransactionCommit(
 
     CommitTransactionOplogObject cmdObj;
     cmdObj.setCommitTimestamp(commitTimestamp);
-    repl::MutableOplogEntry oplogEntry;
+    MutableOplogEntry oplogEntry;
     oplogEntry.getDurableReplOperation().setObject(std::move(cmdObj.toBSON()));
     logCommitOrAbortForPreparedTransaction(
         opCtx, oplogEntry, commitOplogEntryOpTime, DurableTxnStateEnum::kCommitted);
@@ -1442,7 +1443,7 @@ void OpObserverImpl::onTransactionAbort(OperationContext* opCtx,
     }
 
     AbortTransactionOplogObject cmdObj;
-    repl::MutableOplogEntry oplogEntry;
+    MutableOplogEntry oplogEntry;
     oplogEntry.getDurableReplOperation().setObject(std::move(cmdObj.toBSON()));
     logCommitOrAbortForPreparedTransaction(
         opCtx, oplogEntry, *abortOplogEntryOpTime, DurableTxnStateEnum::kAborted);

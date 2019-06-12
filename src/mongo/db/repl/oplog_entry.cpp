@@ -153,12 +153,12 @@ BSONObj makeOplogEntryDoc(OpTime opTime,
 
 }  // namespace
 
-const int OplogEntry::kOplogVersion = 2;
+const int MutableOplogEntry::kOplogVersion = 2;
 
 // Static
-ReplOperation OplogEntry::makeInsertOperation(const NamespaceString& nss,
-                                              boost::optional<UUID> uuid,
-                                              const BSONObj& docToInsert) {
+ReplOperation MutableOplogEntry::makeInsertOperation(const NamespaceString& nss,
+                                                     boost::optional<UUID> uuid,
+                                                     const BSONObj& docToInsert) {
     ReplOperation op;
     op.setOpType(OpTypeEnum::kInsert);
     op.setNss(nss);
@@ -167,10 +167,10 @@ ReplOperation OplogEntry::makeInsertOperation(const NamespaceString& nss,
     return op;
 }
 
-ReplOperation OplogEntry::makeUpdateOperation(const NamespaceString nss,
-                                              boost::optional<UUID> uuid,
-                                              const BSONObj& update,
-                                              const BSONObj& criteria) {
+ReplOperation MutableOplogEntry::makeUpdateOperation(const NamespaceString nss,
+                                                     boost::optional<UUID> uuid,
+                                                     const BSONObj& update,
+                                                     const BSONObj& criteria) {
     ReplOperation op;
     op.setOpType(OpTypeEnum::kUpdate);
     op.setNss(nss);
@@ -180,9 +180,28 @@ ReplOperation OplogEntry::makeUpdateOperation(const NamespaceString nss,
     return op;
 }
 
-ReplOperation OplogEntry::makeDeleteOperation(const NamespaceString& nss,
-                                              boost::optional<UUID> uuid,
-                                              const BSONObj& docToDelete) {
+MutableOplogEntry::MutableOplogEntry() : OplogEntryBase() {
+    // Default version to kOplogVersion.
+    setVersion(kOplogVersion);
+}
+
+void MutableOplogEntry::setOpTime(const OpTime& opTime) {
+    setTimestamp(opTime.getTimestamp());
+    if (opTime.getTerm() != OpTime::kUninitializedTerm)
+        setTerm(opTime.getTerm());
+}
+
+OpTime MutableOplogEntry::getOpTime() const {
+    long long term = OpTime::kUninitializedTerm;
+    if (getTerm()) {
+        term = getTerm().get();
+    }
+    return OpTime(getTimestamp(), term);
+}
+
+ReplOperation MutableOplogEntry::makeDeleteOperation(const NamespaceString& nss,
+                                                     boost::optional<UUID> uuid,
+                                                     const BSONObj& docToDelete) {
     ReplOperation op;
     op.setOpType(OpTypeEnum::kDelete);
     op.setNss(nss);
@@ -320,25 +339,6 @@ std::ostream& operator<<(std::ostream& s, const OplogEntry& o) {
 
 std::ostream& operator<<(std::ostream& s, const ReplOperation& o) {
     return s << o.toBSON().toString();
-}
-
-MutableOplogEntry::MutableOplogEntry() : OplogEntryBase() {
-    // Default version to OplogEntry::kOplogVersion.
-    setVersion(OplogEntry::kOplogVersion);
-}
-
-void MutableOplogEntry::setOpTime(const OpTime& opTime) {
-    setTimestamp(opTime.getTimestamp());
-    if (opTime.getTerm() != OpTime::kUninitializedTerm)
-        setTerm(opTime.getTerm());
-}
-
-OpTime MutableOplogEntry::getOpTime() const {
-    long long term = OpTime::kUninitializedTerm;
-    if (getTerm()) {
-        term = getTerm().get();
-    }
-    return OpTime(getTimestamp(), term);
 }
 
 }  // namespace repl
