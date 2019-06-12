@@ -70,6 +70,21 @@ private:
  */
 class MutableOplogEntry : public OplogEntryBase {
 public:
+    // Current oplog version, should be the value of the v field in all oplog entries.
+    static const int kOplogVersion;
+
+    // Helpers to generate ReplOperation.
+    static ReplOperation makeInsertOperation(const NamespaceString& nss,
+                                             boost::optional<UUID> uuid,
+                                             const BSONObj& docToInsert);
+    static ReplOperation makeUpdateOperation(const NamespaceString nss,
+                                             boost::optional<UUID> uuid,
+                                             const BSONObj& update,
+                                             const BSONObj& criteria);
+    static ReplOperation makeDeleteOperation(const NamespaceString& nss,
+                                             boost::optional<UUID> uuid,
+                                             const BSONObj& docToDelete);
+
     MutableOplogEntry();
 
     /**
@@ -84,7 +99,7 @@ public:
 };
 
 /**
- * A parsed oplog entry that privately inherits from the MutableOplogEntry parsed by the IDL.
+ * A parsed oplog entry that privately inherits from the MutableOplogEntry.
  * This class is immutable. All setters are hidden.
  */
 class OplogEntry : private MutableOplogEntry {
@@ -111,6 +126,8 @@ public:
     using OplogEntryBase::kUuidFieldName;
     using OplogEntryBase::kVersionFieldName;
     using OplogEntryBase::kWallClockTimeFieldName;
+    using MutableOplogEntry::kOplogVersion;
+
     // Make serialize(), toBSON() and getters accessible.
     using OplogEntryBase::serialize;
     using OplogEntryBase::toBSON;
@@ -156,21 +173,6 @@ public:
         kCommitTransaction,
         kAbortTransaction,
     };
-
-    // Current oplog version, should be the value of the v field in all oplog entries.
-    static const int kOplogVersion;
-
-    // Helpers to generate ReplOperation.
-    static ReplOperation makeInsertOperation(const NamespaceString& nss,
-                                             boost::optional<UUID> uuid,
-                                             const BSONObj& docToInsert);
-    static ReplOperation makeUpdateOperation(const NamespaceString nss,
-                                             boost::optional<UUID> uuid,
-                                             const BSONObj& update,
-                                             const BSONObj& criteria);
-    static ReplOperation makeDeleteOperation(const NamespaceString& nss,
-                                             boost::optional<UUID> uuid,
-                                             const BSONObj& docToDelete);
 
     // Get the in-memory size in bytes of a ReplOperation.
     static size_t getDurableReplOperationSize(const DurableReplOperation& op);
