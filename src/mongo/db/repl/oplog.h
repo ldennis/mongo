@@ -144,6 +144,8 @@ OpTime logOp(OperationContext* opCtx,
              const OplogLink& oplogLink,
              const OplogSlot& oplogSlot);
 
+OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry);
+
 // Flush out the cached pointer to the oplog.
 void clearLocalOplogPtr();
 

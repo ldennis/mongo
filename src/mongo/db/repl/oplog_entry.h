@@ -66,10 +66,28 @@ private:
 };
 
 /**
- * A parsed oplog entry that privately inherits from the OplogEntryBase parsed by the IDL.
+ * Mutable class used on primary to build up oplog entries progressively.
+ */
+class MutableOplogEntry : public OplogEntryBase {
+public:
+    MutableOplogEntry();
+
+    /**
+     * Sets the OpTime of the oplog entry.
+     */
+    void setOpTime(const OpTime& opTime);
+
+    /**
+     * Returns the OpTime of the oplog entry.
+     */
+    OpTime getOpTime() const;
+};
+
+/**
+ * A parsed oplog entry that privately inherits from the MutableOplogEntry parsed by the IDL.
  * This class is immutable. All setters are hidden.
  */
-class OplogEntry : private OplogEntryBase {
+class OplogEntry : private MutableOplogEntry {
 public:
     // Make field names accessible.
     using OplogEntryBase::kDurableReplOperationFieldName;
@@ -117,6 +135,7 @@ public:
     using OplogEntryBase::getPrevWriteOpTimeInTransaction;
     using OplogEntryBase::getPreImageOpTime;
     using OplogEntryBase::getPostImageOpTime;
+    using MutableOplogEntry::getOpTime;
 
     enum class CommandType {
         kNotCommand,
@@ -249,11 +268,6 @@ public:
     const BSONObj& getRaw() const {
         return _raw;
     }
-
-    /**
-     * Returns the OpTime of the oplog entry.
-     */
-    OpTime getOpTime() const;
 
     /**
      * Serializes the oplog entry to a string.
