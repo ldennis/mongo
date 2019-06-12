@@ -1224,12 +1224,9 @@ int logOplogEntriesForTransaction(OperationContext* opCtx,
 
 void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
                                             MutableOplogEntry& oplogEntry,
-                                            const OplogSlot& oplogSlot,
                                             DurableTxnStateEnum durableState) {
     const NamespaceString cmdNss{"admin", "$cmd"};
     oplogEntry.getDurableReplOperation().setNss(cmdNss);
-
-    oplogEntry.setOpTime(oplogSlot);
 
     oplogEntry.getOperationSessionInfo().setSessionId(*opCtx->getLogicalSessionId());
     oplogEntry.getOperationSessionInfo().setTxnNumber(*opCtx->getTxnNumber());
@@ -1258,7 +1255,7 @@ void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
 
             WriteUnitOfWork wuow(opCtx);
             const auto oplogOpTime = logOperation(opCtx, oplogEntry);
-            invariant(oplogSlot.isNull() || oplogSlot == oplogOpTime);
+            invariant(oplogEntry.getOpTime().isNull() || oplogEntry.getOpTime() == oplogOpTime);
 
             onWriteOpCompleted(opCtx,
                                cmdNss,
@@ -1335,12 +1332,14 @@ void OpObserverImpl::onPreparedTransactionCommit(
 
     invariant(!commitTimestamp.isNull());
 
+    MutableOplogEntry oplogEntry;
+    oplogEntry.setOpTime(commitOplogEntryOpTime);
+
     CommitTransactionOplogObject cmdObj;
     cmdObj.setCommitTimestamp(commitTimestamp);
-    MutableOplogEntry oplogEntry;
     oplogEntry.getDurableReplOperation().setObject(std::move(cmdObj.toBSON()));
-    logCommitOrAbortForPreparedTransaction(
-        opCtx, oplogEntry, commitOplogEntryOpTime, DurableTxnStateEnum::kCommitted);
+
+    logCommitOrAbortForPreparedTransaction(opCtx, oplogEntry, DurableTxnStateEnum::kCommitted);
 }
 
 void OpObserverImpl::onTransactionPrepare(OperationContext* opCtx,
@@ -1456,11 +1455,13 @@ void OpObserverImpl::onTransactionAbort(OperationContext* opCtx,
         return;
     }
 
-    AbortTransactionOplogObject cmdObj;
     MutableOplogEntry oplogEntry;
+    oplogEntry.setOpTime(*abortOplogEntryOpTime);
+
+    AbortTransactionOplogObject cmdObj;
     oplogEntry.getDurableReplOperation().setObject(std::move(cmdObj.toBSON()));
-    logCommitOrAbortForPreparedTransaction(
-        opCtx, oplogEntry, *abortOplogEntryOpTime, DurableTxnStateEnum::kAborted);
+
+    logCommitOrAbortForPreparedTransaction(opCtx, oplogEntry, DurableTxnStateEnum::kAborted);
 }
 
 void OpObserverImpl::onReplicationRollback(OperationContext* opCtx,
