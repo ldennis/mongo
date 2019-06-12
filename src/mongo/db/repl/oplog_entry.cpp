@@ -180,6 +180,17 @@ ReplOperation MutableOplogEntry::makeUpdateOperation(const NamespaceString nss,
     return op;
 }
 
+ReplOperation MutableOplogEntry::makeDeleteOperation(const NamespaceString& nss,
+                                                     boost::optional<UUID> uuid,
+                                                     const BSONObj& docToDelete) {
+    ReplOperation op;
+    op.setOpType(OpTypeEnum::kDelete);
+    op.setNss(nss);
+    op.setUuid(uuid);
+    op.setObject(docToDelete.getOwned());
+    return op;
+}
+
 MutableOplogEntry::MutableOplogEntry() : OplogEntryBase() {
     // Default version to kOplogVersion.
     setVersion(kOplogVersion);
@@ -197,17 +208,6 @@ OpTime MutableOplogEntry::getOpTime() const {
         term = getTerm().get();
     }
     return OpTime(getTimestamp(), term);
-}
-
-ReplOperation MutableOplogEntry::makeDeleteOperation(const NamespaceString& nss,
-                                                     boost::optional<UUID> uuid,
-                                                     const BSONObj& docToDelete) {
-    ReplOperation op;
-    op.setOpType(OpTypeEnum::kDelete);
-    op.setNss(nss);
-    op.setUuid(uuid);
-    op.setObject(docToDelete.getOwned());
-    return op;
 }
 
 size_t OplogEntry::getDurableReplOperationSize(const DurableReplOperation& op) {
