@@ -107,11 +107,11 @@ public:
         getDurableReplOperation().setUuid(std::move(value));
     }
 
-    void setObject(mongo::BSONObj value) & {
+    void setObject(BSONObj value) & {
         getDurableReplOperation().setObject(std::move(value));
     }
 
-    void setObject2(boost::optional<mongo::BSONObj> value) & {
+    void setObject2(boost::optional<BSONObj> value) & {
         getDurableReplOperation().setObject2(std::move(value));
     }
 

@@ -230,7 +230,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
         }
     }
 
-    oplogEntry.setOpType(repl::OpTypeEnum::kNoop);
+    oplogEntry.setOpType(repl::OpTypeEnum::kUpdate);
     oplogEntry.setObject(args.updateArgs.update);
     oplogEntry.setObject2(args.updateArgs.criteria);
     if (args.updateArgs.fromMigrate)
@@ -251,49 +251,41 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
                            StmtId stmtId,
                            bool fromMigrate,
                            const boost::optional<BSONObj>& deletedDoc) {
-    OperationSessionInfo sessionInfo;
+    MutableOplogEntry oplogEntry;
+    oplogEntry.setNss(nss);
+    oplogEntry.setUuid(uuid);
+
     repl::OplogLink oplogLink;
 
     const auto txnParticipant = TransactionParticipant::get(opCtx);
     if (txnParticipant) {
-        sessionInfo.setSessionId(*opCtx->getLogicalSessionId());
-        sessionInfo.setTxnNumber(*opCtx->getTxnNumber());
+        oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
+        oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
     }
+    oplogEntry.setStatementId(stmtId);
 
     OpTimeBundle opTimes;
     opTimes.wallClockTime = getWallClockTimeForOpLog(opCtx);
+    oplogEntry.setWallClockTime(opTimes.wallClockTime);
 
     if (deletedDoc && opCtx->getTxnNumber()) {
-        auto noteOplog = logOperation(opCtx,
-                                      "n",
-                                      nss,
-                                      uuid,
-                                      deletedDoc.get(),
-                                      nullptr,
-                                      false,
-                                      opTimes.wallClockTime,
-                                      sessionInfo,
-                                      stmtId,
-                                      {},
-                                      OplogSlot());
+        oplogEntry.setOpType(repl::OpTypeEnum::kNoop);
+        oplogEntry.setObject(deletedDoc.get());
+        oplogEntry.setOpTime(OplogSlot());
+        auto noteOplog = logOperation(opCtx, oplogEntry);
         opTimes.prePostImageOpTime = noteOplog;
         oplogLink.preImageOpTime = noteOplog;
     }
 
     auto& documentKey = documentKeyDecoration(opCtx);
-    opTimes.writeOpTime = logOperation(opCtx,
-                                       "d",
-                                       nss,
-                                       uuid,
-                                       documentKey,
-                                       nullptr,
-                                       fromMigrate,
-                                       opTimes.wallClockTime,
-                                       sessionInfo,
-                                       stmtId,
-                                       oplogLink,
-                                       OplogSlot());
+    oplogEntry.setOpType(repl::OpTypeEnum::kDelete);
+    oplogEntry.setObject(documentKey);
+    if (fromMigrate)
+        oplogEntry.setFromMigrate(true);
+    setOplogLink(oplogEntry, oplogLink);
+    oplogEntry.setOpTime(OplogSlot());
+    opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
     return opTimes;
 }
 
