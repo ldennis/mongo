@@ -184,7 +184,12 @@ public:
     using OplogEntryBase::getPrevWriteOpTimeInTransaction;
     using OplogEntryBase::getPreImageOpTime;
     using OplogEntryBase::getPostImageOpTime;
+
+    // Make helper functions accessible.
     using MutableOplogEntry::getOpTime;
+    using MutableOplogEntry::makeInsertOperation;
+    using MutableOplogEntry::makeUpdateOperation;
+    using MutableOplogEntry::makeDeleteOperation;
 
     enum class CommandType {
         kNotCommand,
