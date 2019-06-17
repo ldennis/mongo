@@ -485,8 +485,15 @@ void OpObserverImpl::onInserts(OperationContext* opCtx,
             txnParticipant.addTransactionOperation(opCtx, operation);
         }
     } else {
+        MutableOplogEntry oplogEntry;
+        oplogEntry.setNss(nss);
+        oplogEntry.setUuid(uuid);
+        if (fromMigrate)
+            oplogEntry.setFromMigrate(true);
         lastWriteDate = getWallClockTimeForOpLog(opCtx);
-        opTimeList = repl::logInsertOps(opCtx, nss, uuid, first, last, fromMigrate, lastWriteDate);
+        oplogEntry.setWallClockTime(lastWriteDate);
+
+        opTimeList = repl::logInsertOps(opCtx, oplogEntry, first, last);
         if (!opTimeList.empty())
             lastOpTime = opTimeList.back();
 
