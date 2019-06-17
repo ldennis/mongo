@@ -609,6 +609,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     if (slot.isNull()) {
         slot = oplogInfo->getNextOpTimes(opCtx, 1U)[0];
         timestamp = slot.getTimestamp();
+        // TODO: make this oplogEntry reference const.
         oplogEntry.setOpTime(slot);
     }
 

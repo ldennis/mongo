@@ -193,7 +193,6 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     if (!storeObj.isEmpty() && opCtx->getTxnNumber()) {
         oplogEntry.setOpType(repl::OpTypeEnum::kNoop);
         oplogEntry.setObject(std::move(storeObj));
-        oplogEntry.setOpTime(OplogSlot());
         auto noteUpdateOpTime = logOperation(opCtx, oplogEntry);
 
         opTimes.prePostImageOpTime = noteUpdateOpTime;
@@ -211,6 +210,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setObject2(args.updateArgs.criteria);
     oplogEntry.setFromMigrate(args.updateArgs.fromMigrate);
     setOplogLink(oplogEntry, oplogLink);
+    // Need to unset OpTime because the same oplogEntry is reused.
     oplogEntry.setOpTime(OplogSlot());
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
 
@@ -246,7 +246,6 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     if (deletedDoc && opCtx->getTxnNumber()) {
         oplogEntry.setOpType(repl::OpTypeEnum::kNoop);
         oplogEntry.setObject(deletedDoc.get());
-        oplogEntry.setOpTime(OplogSlot());
         auto noteOplog = logOperation(opCtx, oplogEntry);
         opTimes.prePostImageOpTime = noteOplog;
         oplogLink.preImageOpTime = noteOplog;
@@ -256,6 +255,7 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     oplogEntry.setObject(documentKeyDecoration(opCtx));
     oplogEntry.setFromMigrate(fromMigrate);
     setOplogLink(oplogEntry, oplogLink);
+    // Need to unset OpTime because the same oplogEntry is reused.
     oplogEntry.setOpTime(OplogSlot());
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
     return opTimes;
@@ -290,7 +290,6 @@ void OpObserverImpl::onCreateIndex(OperationContext* opCtx,
     oplogEntry.setObject(builder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     oplogEntry.setFromMigrate(fromMigrate);
-    oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
 
@@ -323,7 +322,6 @@ void OpObserverImpl::onStartIndexBuild(OperationContext* opCtx,
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     oplogEntry.setFromMigrate(fromMigrate);
-    oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
 
@@ -356,7 +354,6 @@ void OpObserverImpl::onCommitIndexBuild(OperationContext* opCtx,
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     oplogEntry.setFromMigrate(fromMigrate);
-    oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
 
@@ -389,7 +386,6 @@ void OpObserverImpl::onAbortIndexBuild(OperationContext* opCtx,
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     oplogEntry.setFromMigrate(fromMigrate);
-    oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
 
@@ -616,7 +612,6 @@ void OpObserverImpl::onInternalOpMessage(OperationContext* opCtx,
     oplogEntry.setObject(msgObj);
     oplogEntry.setObject2(o2MsgObj);
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
 
@@ -664,7 +659,6 @@ void OpObserverImpl::onCollMod(OperationContext* opCtx,
         oplogEntry.setObject(makeCollModCmdObj(collModCmd, oldCollOptions, ttlInfo));
         oplogEntry.setObject2(o2Builder.done());
         oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-        oplogEntry.setOpTime(OplogSlot());
         logOperation(opCtx, oplogEntry);
     }
 
@@ -690,7 +684,6 @@ void OpObserverImpl::onDropDatabase(OperationContext* opCtx, const std::string& 
     oplogEntry.setNss({dbName, "$cmd"});
     oplogEntry.setObject(BSON("dropDatabase" << 1));
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 
     uassert(
@@ -715,7 +708,6 @@ repl::OpTime OpObserverImpl::onDropCollection(OperationContext* opCtx,
         oplogEntry.setObject(BSON("drop" << collectionName.coll()));
         oplogEntry.setObject2(makeObject2ForDropOrRename(numRecords));
         oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-        oplogEntry.setOpTime(OplogSlot());
         logOperation(opCtx, oplogEntry);
     }
 
@@ -744,7 +736,6 @@ void OpObserverImpl::onDropIndex(OperationContext* opCtx,
     oplogEntry.setObject(BSON("dropIndexes" << nss.coll() << "index" << indexName));
     oplogEntry.setObject2(indexInfo);
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
 
@@ -772,7 +763,6 @@ repl::OpTime OpObserverImpl::preRenameCollection(OperationContext* const opCtx,
     if (dropTargetUUID)
         oplogEntry.setObject2(makeObject2ForDropOrRename(numRecords));
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 
     return {};
@@ -810,7 +800,6 @@ void OpObserverImpl::onApplyOps(OperationContext* opCtx,
     oplogEntry.setNss({dbName, "$cmd"});
     oplogEntry.setObject(applyOpCmd);
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
 
@@ -825,7 +814,6 @@ void OpObserverImpl::onEmptyCapped(OperationContext* opCtx,
         oplogEntry.setUuid(uuid);
         oplogEntry.setObject(BSON("emptycapped" << collectionName.coll()));
         oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-        oplogEntry.setOpTime(OplogSlot());
         logOperation(opCtx, oplogEntry);
     }
 }
@@ -1163,7 +1151,6 @@ void OpObserverImpl::onUnpreparedTransactionCommit(
         const auto lastWriteOpTime = txnParticipant.getLastWriteOpTime();
         invariant(lastWriteOpTime.isNull());
         MutableOplogEntry oplogEntry;
-        oplogEntry.setOpTime(OplogSlot());
         oplogEntry.setPrevWriteOpTimeInTransaction(lastWriteOpTime);
         oplogEntry.setStatementId(StmtId(0));
         commitOpTime = logApplyOpsForTransaction(
