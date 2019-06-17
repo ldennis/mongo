@@ -77,36 +77,6 @@ constexpr auto kNumRecordsFieldName = "numRecords"_sd;
 constexpr auto kMsgFieldName = "msg"_sd;
 constexpr long long kInvalidNumRecords = -1LL;
 
-repl::OpTime logOperation(OperationContext* opCtx,
-                          const char* opstr,
-                          const NamespaceString& ns,
-                          OptionalCollectionUUID uuid,
-                          const BSONObj& obj,
-                          const BSONObj* o2,
-                          bool fromMigrate,
-                          Date_t wallClockTime,
-                          const OperationSessionInfo& sessionInfo,
-                          boost::optional<StmtId> stmtId,
-                          const repl::OplogLink& oplogLink,
-                          const OplogSlot& oplogSlot) {
-    auto& times = OpObserver::Times::get(opCtx).reservedOpTimes;
-    auto opTime = repl::logOp(opCtx,
-                              opstr,
-                              ns,
-                              uuid,
-                              obj,
-                              o2,
-                              fromMigrate,
-                              wallClockTime,
-                              sessionInfo,
-                              stmtId,
-                              oplogLink,
-                              oplogSlot);
-
-    times.push_back(opTime);
-    return opTime;
-}
-
 inline void setOplogLink(MutableOplogEntry& oplogEntry, const repl::OplogLink& oplogLink) {
     oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
 
@@ -292,33 +262,6 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     oplogEntry.setOpTime(OplogSlot());
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
     return opTimes;
-}
-
-/**
- * Write oplog entry for applyOps/atomic transaction operations.
- */
-OpTimeBundle replLogApplyOps(OperationContext* opCtx,
-                             const NamespaceString& cmdNss,
-                             const BSONObj& applyOpCmd,
-                             const OperationSessionInfo& sessionInfo,
-                             boost::optional<StmtId> stmtId,
-                             const repl::OplogLink& oplogLink,
-                             const OplogSlot& oplogSlot) {
-    OpTimeBundle times;
-    times.wallClockTime = getWallClockTimeForOpLog(opCtx);
-    times.writeOpTime = logOperation(opCtx,
-                                     "c",
-                                     cmdNss,
-                                     {},
-                                     applyOpCmd,
-                                     nullptr,
-                                     false,
-                                     times.wallClockTime,
-                                     sessionInfo,
-                                     stmtId,
-                                     oplogLink,
-                                     oplogSlot);
-    return times;
 }
 
 }  // namespace
@@ -961,10 +904,8 @@ std::vector<repl::ReplOperation>::const_iterator packTransactionStatementsForApp
 //
 // Returns the optime of the written oplog entry.
 OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
+                                       MutableOplogEntry& oplogEntry,
                                        BSONObjBuilder* applyOpsBuilder,
-                                       const OplogSlot& oplogSlot,
-                                       repl::OpTime prevWriteOpTime,
-                                       boost::optional<StmtId> stmtId,
                                        const bool prepare,
                                        const bool isPartialTxn,
                                        const bool shouldWriteStateField,
@@ -975,14 +916,10 @@ OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
     // A 'prepare' oplog entry should never include a 'partialTxn' field.
     invariant(!(isPartialTxn && prepare));
 
-    const NamespaceString cmdNss{"admin", "$cmd"};
-
-    OperationSessionInfo sessionInfo;
-    repl::OplogLink oplogLink;
-    sessionInfo.setSessionId(*opCtx->getLogicalSessionId());
-    sessionInfo.setTxnNumber(*opCtx->getTxnNumber());
-
-    oplogLink.prevOpTime = prevWriteOpTime;
+    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
+    oplogEntry.setNss({"admin", "$cmd"});
+    oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
+    oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
 
     try {
         if (prepare) {
@@ -994,9 +931,12 @@ OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
         if (count) {
             applyOpsBuilder->append("count", *count);
         }
-        auto applyOpCmd = applyOpsBuilder->done();
-        auto times =
-            replLogApplyOps(opCtx, cmdNss, applyOpCmd, sessionInfo, stmtId, oplogLink, oplogSlot);
+
+        OpTimeBundle times;
+        times.wallClockTime = getWallClockTimeForOpLog(opCtx);
+        oplogEntry.setWallClockTime(times.wallClockTime);
+        oplogEntry.setObject(applyOpsBuilder->done());
+        times.writeOpTime = logOperation(opCtx, oplogEntry);
 
         auto txnState = [&]() -> boost::optional<DurableTxnStateEnum> {
             if (!shouldWriteStateField) {
@@ -1012,8 +952,13 @@ OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
         }();
 
         if (updateTxnTable) {
-            onWriteOpCompleted(
-                opCtx, cmdNss, {}, times.writeOpTime, times.wallClockTime, txnState, startOpTime);
+            onWriteOpCompleted(opCtx,
+                               oplogEntry.getNss(),
+                               {},
+                               times.writeOpTime,
+                               times.wallClockTime,
+                               txnState,
+                               startOpTime);
         }
         return times;
     } catch (const AssertionException& e) {
@@ -1031,10 +976,8 @@ OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
 // TransactionTooLarge error.
 // TODO(SERVER-41470): Remove this function once old transaction format is no longer needed.
 OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
+                                       MutableOplogEntry& oplogEntry,
                                        const std::vector<repl::ReplOperation>& statements,
-                                       const OplogSlot& oplogSlot,
-                                       repl::OpTime prevWriteOpTime,
-                                       boost::optional<StmtId> stmtId,
                                        const bool prepare,
                                        const bool isPartialTxn,
                                        const bool shouldWriteStateField,
@@ -1045,10 +988,8 @@ OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
     packTransactionStatementsForApplyOps(
         &applyOpsBuilder, statements.begin(), statements.end(), false /* limitSize */);
     return logApplyOpsForTransaction(opCtx,
+                                     oplogEntry,
                                      &applyOpsBuilder,
-                                     oplogSlot,
-                                     prevWriteOpTime,
-                                     stmtId,
                                      prepare,
                                      isPartialTxn,
                                      shouldWriteStateField,
@@ -1140,11 +1081,13 @@ int logOplogEntriesForTransaction(OperationContext* opCtx,
                 // transaction, and is included on a non-initial implicit commit or prepare entry.
                 auto count =
                     (lastOp && !firstOp) ? boost::optional<long long>(stmts.size()) : boost::none;
+
+                MutableOplogEntry oplogEntry;
+                oplogEntry.setOpTime(oplogSlot);
+                oplogEntry.setPrevWriteOpTimeInTransaction(prevWriteOpTime.writeOpTime);
                 prevWriteOpTime = logApplyOpsForTransaction(opCtx,
+                                                            oplogEntry,
                                                             &applyOpsBuilder,
-                                                            oplogSlot,
-                                                            prevWriteOpTime.writeOpTime,
-                                                            boost::none /* stmtId */,
                                                             implicitPrepare,
                                                             isPartialTxn,
                                                             true /* shouldWriteStateField */,
@@ -1165,8 +1108,7 @@ void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
                                             DurableTxnStateEnum durableState) {
     oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
 
-    const NamespaceString cmdNss{"admin", "$cmd"};
-    oplogEntry.setNss(cmdNss);
+    oplogEntry.setNss({"admin", "$cmd"});
 
     oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
     oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
@@ -1198,7 +1140,7 @@ void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
             invariant(oplogEntry.getOpTime().isNull() || oplogEntry.getOpTime() == oplogOpTime);
 
             onWriteOpCompleted(opCtx,
-                               cmdNss,
+                               oplogEntry.getNss(),
                                {},
                                oplogOpTime,
                                wallClockTime,
@@ -1232,12 +1174,14 @@ void OpObserverImpl::onUnpreparedTransactionCommit(
         auto txnParticipant = TransactionParticipant::get(opCtx);
         const auto lastWriteOpTime = txnParticipant.getLastWriteOpTime();
         invariant(lastWriteOpTime.isNull());
+        MutableOplogEntry oplogEntry;
+        oplogEntry.setOpTime(OplogSlot());
+        oplogEntry.setPrevWriteOpTimeInTransaction(lastWriteOpTime);
+        oplogEntry.setStatementId(StmtId(0));
         commitOpTime = logApplyOpsForTransaction(
                            opCtx,
+                           oplogEntry,
                            statements,
-                           OplogSlot(),
-                           lastWriteOpTime,
-                           StmtId(0),
                            false /* prepare */,
                            false /* isPartialTxn */,
                            fcv >= ServerGlobalParams::FeatureCompatibility::Version::kUpgradingTo42,
@@ -1316,12 +1260,14 @@ void OpObserverImpl::onTransactionPrepare(OperationContext* opCtx,
                 auto txnParticipant = TransactionParticipant::get(opCtx);
                 const auto lastWriteOpTime = txnParticipant.getLastWriteOpTime();
                 invariant(lastWriteOpTime.isNull());
+
+                MutableOplogEntry oplogEntry;
+                oplogEntry.setOpTime(prepareOpTime);
+                oplogEntry.setPrevWriteOpTimeInTransaction(lastWriteOpTime);
                 logApplyOpsForTransaction(
                     opCtx,
+                    oplogEntry,
                     statements,
-                    prepareOpTime,
-                    lastWriteOpTime,
-                    boost::none /* stmtId */,
                     true /* prepare */,
                     false /* isPartialTxn */,
                     fcv >= ServerGlobalParams::FeatureCompatibility::Version::kUpgradingTo42,
@@ -1360,11 +1306,13 @@ void OpObserverImpl::onTransactionPrepare(OperationContext* opCtx,
                     BSONArrayBuilder opsArray(applyOpsBuilder.subarrayStart("applyOps"_sd));
                     opsArray.done();
                     auto oplogSlot = reservedSlots.front();
+
+                    MutableOplogEntry oplogEntry;
+                    oplogEntry.setOpTime(oplogSlot);
+                    oplogEntry.setPrevWriteOpTimeInTransaction(repl::OpTime());
                     logApplyOpsForTransaction(opCtx,
+                                              oplogEntry,
                                               &applyOpsBuilder,
-                                              oplogSlot,
-                                              repl::OpTime() /* prevWriteOpTime */,
-                                              boost::none /* stmtId */,
                                               true /* prepare */,
                                               false /* isPartialTxn */,
                                               true /* shouldWriteStateField */,
