@@ -177,11 +177,10 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setUuid(args.uuid);
 
     repl::OplogLink oplogLink;
-
     const auto txnParticipant = TransactionParticipant::get(opCtx);
     if (txnParticipant) {
-        oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
-        oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
+        oplogEntry.setSessionId(opCtx->getLogicalSessionId());
+        oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
     }
     oplogEntry.setStatementId(args.updateArgs.stmtId);
@@ -232,11 +231,10 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     oplogEntry.setUuid(uuid);
 
     repl::OplogLink oplogLink;
-
     const auto txnParticipant = TransactionParticipant::get(opCtx);
     if (txnParticipant) {
-        oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
-        oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
+        oplogEntry.setSessionId(opCtx->getLogicalSessionId());
+        oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
     }
     oplogEntry.setStatementId(stmtId);
@@ -918,8 +916,8 @@ OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
 
     oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
     oplogEntry.setNss({"admin", "$cmd"});
-    oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
-    oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
+    oplogEntry.setSessionId(opCtx->getLogicalSessionId());
+    oplogEntry.setTxnNumber(opCtx->getTxnNumber());
 
     try {
         if (prepare) {
@@ -1107,12 +1105,9 @@ void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
                                             MutableOplogEntry& oplogEntry,
                                             DurableTxnStateEnum durableState) {
     oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
-
     oplogEntry.setNss({"admin", "$cmd"});
-
-    oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
-    oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
-
+    oplogEntry.setSessionId(opCtx->getLogicalSessionId());
+    oplogEntry.setTxnNumber(opCtx->getTxnNumber());
     oplogEntry.setPrevWriteOpTimeInTransaction(
         TransactionParticipant::get(opCtx).getLastWriteOpTime());
 
