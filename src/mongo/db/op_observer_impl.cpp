@@ -210,8 +210,6 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setObject2(args.updateArgs.criteria);
     oplogEntry.setFromMigrate(args.updateArgs.fromMigrate);
     setOplogLink(oplogEntry, oplogLink);
-    // Need to unset OpTime because the same oplogEntry is reused.
-    oplogEntry.setOpTime(OplogSlot());
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
 
     return opTimes;
@@ -255,8 +253,6 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     oplogEntry.setObject(documentKeyDecoration(opCtx));
     oplogEntry.setFromMigrate(fromMigrate);
     setOplogLink(oplogEntry, oplogLink);
-    // Need to unset OpTime because the same oplogEntry is reused.
-    oplogEntry.setOpTime(OplogSlot());
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
     return opTimes;
 }

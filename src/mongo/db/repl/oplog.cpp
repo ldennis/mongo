@@ -605,11 +605,18 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
         collWriteLock.emplace(opCtx, oplogInfo->getOplogCollectionName(), MODE_IX);
     }
 
+    bool resetOpTimeOnExit = false;
+    auto onExitGuard = makeGuard([&] {
+        if (resetOpTimeOnExit)
+            oplogEntry.setOpTime(OplogSlot());
+    });
+
     WriteUnitOfWork wuow(opCtx);
     if (slot.isNull()) {
         slot = oplogInfo->getNextOpTimes(opCtx, 1U)[0];
         timestamp = slot.getTimestamp();
-        // TODO: make this oplogEntry reference const.
+        // TODO: make the oplogEntry reference const instead of using the guard.
+        resetOpTimeOnExit = true;
         oplogEntry.setOpTime(slot);
     }
 
