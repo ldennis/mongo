@@ -209,8 +209,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setOpType(repl::OpTypeEnum::kUpdate);
     oplogEntry.setObject(args.updateArgs.update);
     oplogEntry.setObject2(args.updateArgs.criteria);
-    if (args.updateArgs.fromMigrate)
-        oplogEntry.setFromMigrate(true);
+    oplogEntry.setFromMigrate(args.updateArgs.fromMigrate);
     setOplogLink(oplogEntry, oplogLink);
     oplogEntry.setOpTime(OplogSlot());
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
@@ -255,8 +254,7 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
 
     oplogEntry.setOpType(repl::OpTypeEnum::kDelete);
     oplogEntry.setObject(documentKeyDecoration(opCtx));
-    if (fromMigrate)
-        oplogEntry.setFromMigrate(true);
+    oplogEntry.setFromMigrate(fromMigrate);
     setOplogLink(oplogEntry, oplogLink);
     oplogEntry.setOpTime(OplogSlot());
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
@@ -291,8 +289,7 @@ void OpObserverImpl::onCreateIndex(OperationContext* opCtx,
     oplogEntry.setUuid(uuid);
     oplogEntry.setObject(builder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    if (fromMigrate)
-        oplogEntry.setFromMigrate(true);
+    oplogEntry.setFromMigrate(fromMigrate);
     oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
@@ -325,8 +322,7 @@ void OpObserverImpl::onStartIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    if (fromMigrate)
-        oplogEntry.setFromMigrate(true);
+    oplogEntry.setFromMigrate(fromMigrate);
     oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
@@ -359,8 +355,7 @@ void OpObserverImpl::onCommitIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    if (fromMigrate)
-        oplogEntry.setFromMigrate(true);
+    oplogEntry.setFromMigrate(fromMigrate);
     oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
@@ -393,8 +388,7 @@ void OpObserverImpl::onAbortIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    if (fromMigrate)
-        oplogEntry.setFromMigrate(true);
+    oplogEntry.setFromMigrate(fromMigrate);
     oplogEntry.setOpTime(OplogSlot());
     logOperation(opCtx, oplogEntry);
 }
@@ -429,8 +423,7 @@ void OpObserverImpl::onInserts(OperationContext* opCtx,
         MutableOplogEntry oplogEntry;
         oplogEntry.setNss(nss);
         oplogEntry.setUuid(uuid);
-        if (fromMigrate)
-            oplogEntry.setFromMigrate(true);
+        oplogEntry.setFromMigrate(fromMigrate);
         lastWriteDate = getWallClockTimeForOpLog(opCtx);
         oplogEntry.setWallClockTime(lastWriteDate);
 
