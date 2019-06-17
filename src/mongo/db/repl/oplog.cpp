@@ -623,25 +623,23 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
 }
 
 std::vector<OpTime> logInsertOps(OperationContext* opCtx,
-                                 const NamespaceString& nss,
-                                 OptionalCollectionUUID uuid,
+                                 MutableOplogEntry& oplogEntry,
                                  std::vector<InsertStatement>::const_iterator begin,
-                                 std::vector<InsertStatement>::const_iterator end,
-                                 bool fromMigrate,
-                                 Date_t wallClockTime) {
+                                 std::vector<InsertStatement>::const_iterator end) {
     invariant(begin != end);
+    oplogEntry.setOpType(repl::OpTypeEnum::kInsert);
 
     auto replCoord = ReplicationCoordinator::get(opCtx);
-    if (replCoord->isOplogDisabledFor(opCtx, nss)) {
+    if (replCoord->isOplogDisabledFor(opCtx, oplogEntry.getNss())) {
         uassert(ErrorCodes::IllegalOperation,
                 str::stream() << "retryable writes is not supported for unreplicated ns: "
-                              << nss.ns(),
+                              << oplogEntry.getNss().ns(),
                 begin->stmtId == kUninitializedStmtId);
         return {};
     }
 
     const size_t count = end - begin;
-    std::vector<OplogDocWriter> writers;
+    std::vector<OplogDocWriterNew> writers;
     writers.reserve(count);
     auto oplogInfo = LocalOplogInfo::get(opCtx);
 
@@ -655,14 +653,11 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
 
     WriteUnitOfWork wuow(opCtx);
 
-    OperationSessionInfo sessionInfo;
-    OplogLink oplogLink;
-
     const auto txnParticipant = TransactionParticipant::get(opCtx);
     if (txnParticipant) {
-        sessionInfo.setSessionId(*opCtx->getLogicalSessionId());
-        sessionInfo.setTxnNumber(*opCtx->getTxnNumber());
-        oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
+        oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
+        oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
+        oplogEntry.setPrevWriteOpTimeInTransaction(txnParticipant.getLastWriteOpTime());
     }
 
     auto timestamps = std::make_unique<Timestamp[]>(count);
@@ -674,20 +669,14 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         if (insertStatementOplogSlot.isNull()) {
             insertStatementOplogSlot = oplogInfo->getNextOpTimes(opCtx, 1U)[0];
         }
-        writers.emplace_back(_logOpWriter(opCtx,
-                                          "i",
-                                          nss,
-                                          uuid,
-                                          begin[i].doc,
-                                          nullptr,
-                                          fromMigrate,
-                                          insertStatementOplogSlot,
-                                          wallClockTime,
-                                          sessionInfo,
-                                          begin[i].stmtId,
-                                          oplogLink));
-        oplogLink.prevOpTime = insertStatementOplogSlot;
-        timestamps[i] = oplogLink.prevOpTime.getTimestamp();
+        oplogEntry.setObject(begin[i].doc);
+        oplogEntry.setOpTime(insertStatementOplogSlot);
+        oplogEntry.setStatementId(begin[i].stmtId);
+
+        writers.emplace_back(OplogDocWriterNew(oplogEntry));
+
+        oplogEntry.setPrevWriteOpTimeInTransaction(insertStatementOplogSlot);
+        timestamps[i] = insertStatementOplogSlot.getTimestamp();
         opTimes.push_back(insertStatementOplogSlot);
     }
 
@@ -708,8 +697,16 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
     auto lastOpTime = opTimes.back();
     invariant(!lastOpTime.isNull());
     auto oplog = oplogInfo->getCollection();
-    _logOpsInner(
-        opCtx, nss, basePtrs.get(), timestamps.get(), count, oplog, lastOpTime, wallClockTime);
+    auto wallClockTime = oplogEntry.getWallClockTime();
+    invariant(wallClockTime);
+    _logOpsInner(opCtx,
+                 oplogEntry.getNss(),
+                 basePtrs.get(),
+                 timestamps.get(),
+                 count,
+                 oplog,
+                 lastOpTime,
+                 *wallClockTime);
     wuow.commit();
     return opTimes;
 }

@@ -98,12 +98,9 @@ void createOplog(OperationContext* opCtx);
  * Returns the OpTime of every insert.
  */
 std::vector<OpTime> logInsertOps(OperationContext* opCtx,
-                                 const NamespaceString& nss,
-                                 OptionalCollectionUUID uuid,
+                                 MutableOplogEntry& oplogEntry,
                                  std::vector<InsertStatement>::const_iterator begin,
-                                 std::vector<InsertStatement>::const_iterator end,
-                                 bool fromMigrate,
-                                 Date_t wallClockTime);
+                                 std::vector<InsertStatement>::const_iterator end);
 
 /**
  * @param opstr
