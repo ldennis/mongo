@@ -585,11 +585,10 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     // specific namespaces such as system.profile. This is the caller's responsibility.
     if (replCoord->isOplogDisabledFor(opCtx, oplogEntry.getNss())) {
         auto statementId = oplogEntry.getStatementId();
-        invariant(statementId);
         uassert(ErrorCodes::IllegalOperation,
                 str::stream() << "retryable writes is not supported for unreplicated ns: "
                               << oplogEntry.getNss().ns(),
-                *statementId == kUninitializedStmtId);
+                !statementId || *statementId == kUninitializedStmtId);
         return {};
     }
 
