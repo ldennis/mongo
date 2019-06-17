@@ -119,6 +119,11 @@ public:
         getDurableReplOperation().setUpsert(std::move(value));
     }
 
+    void setFromMigrate(boost::optional<bool> value) & {
+        if (value && *value)
+            OplogEntryBase::setFromMigrate(value);
+    }
+
     /**
      * Sets the OpTime of the oplog entry.
      */
