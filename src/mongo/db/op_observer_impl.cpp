@@ -285,9 +285,8 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
         oplogLink.preImageOpTime = noteOplog;
     }
 
-    auto& documentKey = documentKeyDecoration(opCtx);
     oplogEntry.setOpType(repl::OpTypeEnum::kDelete);
-    oplogEntry.setObject(documentKey);
+    oplogEntry.setObject(documentKeyDecoration(opCtx));
     if (fromMigrate)
         oplogEntry.setFromMigrate(true);
     setOplogLink(oplogEntry, oplogLink);
@@ -865,9 +864,13 @@ void OpObserverImpl::onRenameCollection(OperationContext* const opCtx,
 void OpObserverImpl::onApplyOps(OperationContext* opCtx,
                                 const std::string& dbName,
                                 const BSONObj& applyOpCmd) {
-    const NamespaceString cmdNss{dbName, "$cmd"};
-
-    replLogApplyOps(opCtx, cmdNss, applyOpCmd, {}, kUninitializedStmtId, {}, OplogSlot());
+    MutableOplogEntry oplogEntry;
+    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
+    oplogEntry.setNss({dbName, "$cmd"});
+    oplogEntry.setObject(applyOpCmd);
+    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
+    oplogEntry.setOpTime(OplogSlot());
+    logOperation(opCtx, oplogEntry);
 }
 
 void OpObserverImpl::onEmptyCapped(OperationContext* opCtx,
