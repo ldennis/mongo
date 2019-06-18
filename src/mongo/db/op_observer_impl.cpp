@@ -177,7 +177,8 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
         oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
     }
-    oplogEntry.setStatementId(args.updateArgs.stmtId);
+    oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
+    oplogEntry.setStatementIdEnhanced(args.updateArgs.stmtId);
 
     OpTimeBundle opTimes;
     opTimes.wallClockTime = getWallClockTimeForOpLog(opCtx);
@@ -201,7 +202,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setOpType(repl::OpTypeEnum::kUpdate);
     oplogEntry.setObject(args.updateArgs.update);
     oplogEntry.setObject2(args.updateArgs.criteria);
-    oplogEntry.setFromMigrate(args.updateArgs.fromMigrate);
+    oplogEntry.setFromMigrateEnhanced(args.updateArgs.fromMigrate);
     setOplogLink(oplogEntry, oplogLink);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
 
@@ -228,7 +229,8 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
         oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
     }
-    oplogEntry.setStatementId(stmtId);
+    oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
+    oplogEntry.setStatementIdEnhanced(stmtId);
 
     OpTimeBundle opTimes;
     opTimes.wallClockTime = getWallClockTimeForOpLog(opCtx);
@@ -244,7 +246,7 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
 
     oplogEntry.setOpType(repl::OpTypeEnum::kDelete);
     oplogEntry.setObject(documentKeyDecoration(opCtx));
-    oplogEntry.setFromMigrate(fromMigrate);
+    oplogEntry.setFromMigrateEnhanced(fromMigrate);
     setOplogLink(oplogEntry, oplogLink);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
     return opTimes;
@@ -278,7 +280,7 @@ void OpObserverImpl::onCreateIndex(OperationContext* opCtx,
     oplogEntry.setUuid(uuid);
     oplogEntry.setObject(builder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setFromMigrate(fromMigrate);
+    oplogEntry.setFromMigrateEnhanced(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
 
@@ -310,7 +312,7 @@ void OpObserverImpl::onStartIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setFromMigrate(fromMigrate);
+    oplogEntry.setFromMigrateEnhanced(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
 
@@ -342,7 +344,7 @@ void OpObserverImpl::onCommitIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setFromMigrate(fromMigrate);
+    oplogEntry.setFromMigrateEnhanced(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
 
@@ -374,7 +376,7 @@ void OpObserverImpl::onAbortIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setFromMigrate(fromMigrate);
+    oplogEntry.setFromMigrateEnhanced(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
 
@@ -408,7 +410,7 @@ void OpObserverImpl::onInserts(OperationContext* opCtx,
         MutableOplogEntry oplogEntry;
         oplogEntry.setNss(nss);
         oplogEntry.setUuid(uuid);
-        oplogEntry.setFromMigrate(fromMigrate);
+        oplogEntry.setFromMigrateEnhanced(fromMigrate);
         lastWriteDate = getWallClockTimeForOpLog(opCtx);
         oplogEntry.setWallClockTime(lastWriteDate);
 
@@ -1129,7 +1131,7 @@ void OpObserverImpl::onUnpreparedTransactionCommit(
         invariant(lastWriteOpTime.isNull());
         MutableOplogEntry oplogEntry;
         oplogEntry.setPrevWriteOpTimeInTransaction(lastWriteOpTime);
-        oplogEntry.setStatementId(StmtId(0));
+        oplogEntry.setStatementIdEnhanced(StmtId(0));
         commitOpTime = logApplyOpsForTransaction(
                            opCtx,
                            oplogEntry,

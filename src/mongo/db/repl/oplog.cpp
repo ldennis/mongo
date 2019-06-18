@@ -680,7 +680,7 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         }
         oplogEntry.setObject(begin[i].doc);
         oplogEntry.setOpTime(insertStatementOplogSlot);
-        oplogEntry.setStatementId(begin[i].stmtId);
+        oplogEntry.setStatementIdEnhanced(begin[i].stmtId);
 
         writers.emplace_back(OplogDocWriterNew(oplogEntry));
 

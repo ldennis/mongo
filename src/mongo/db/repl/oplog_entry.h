@@ -119,11 +119,6 @@ public:
         getDurableReplOperation().setUpsert(std::move(value));
     }
 
-    void setFromMigrate(boost::optional<bool> value) & {
-        if (value && *value)
-            OplogEntryBase::setFromMigrate(value);
-    }
-
     /**
      * Sets the OpTime of the oplog entry.
      */
@@ -133,6 +128,24 @@ public:
      * Returns the OpTime of the oplog entry.
      */
     OpTime getOpTime() const;
+
+    /**
+     * Same as setFromMigrate but only set when it is true.
+     */
+    void setFromMigrateEnhanced(boost::optional<bool> value) & {
+        if (value && *value)
+            setFromMigrate(value);
+    }
+
+    /**
+     * Same as setStatementId but also set prevOpTime to default OpTime if the given statementId is
+     * valid and prevOpTime is not already initialized.
+     */
+    void setStatementIdEnhanced(boost::optional<std::int32_t> value) & {
+        if (value && *value != kUninitializedStmtId && !getPrevWriteOpTimeInTransaction())
+            setPrevWriteOpTimeInTransaction(OpTime());
+        setStatementId(value);
+    }
 };
 
 /**
