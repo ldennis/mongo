@@ -121,47 +121,10 @@ void checkOplogInsert(Status result) {
     massert(17322, str::stream() << "write to oplog failed: " << result.toString(), result.isOK());
 }
 
-/**
- * This allows us to stream the oplog entry directly into data region
- * main goal is to avoid copying the o portion
- * which can be very large
- * TODO: can have this build the entire doc
- */
+// TODO: Stream the oplog entry directly into data region to avoid copying.
 class OplogDocWriter final : public DocWriter {
 public:
-    OplogDocWriter(BSONObj frame, BSONObj oField)
-        : _frame(std::move(frame)), _oField(std::move(oField)) {}
-
-    void writeDocument(char* start) const {
-        char* buf = start;
-
-        memcpy(buf, _frame.objdata(), _frame.objsize() - 1);  // don't copy final EOO
-
-        DataView(buf).write<LittleEndian<int>>(documentSize());
-
-        buf += (_frame.objsize() - 1);
-        buf[0] = (char)Object;
-        buf[1] = 'o';
-        buf[2] = 0;
-        memcpy(buf + 3, _oField.objdata(), _oField.objsize());
-        buf += 3 + _oField.objsize();
-        buf[0] = EOO;
-
-        verify(static_cast<size_t>((buf + 1) - start) == documentSize());  // DEV?
-    }
-
-    size_t documentSize() const {
-        return _frame.objsize() + _oField.objsize() + 1 /* type */ + 2 /* "o" */;
-    }
-
-private:
-    BSONObj _frame;
-    BSONObj _oField;
-};
-
-class OplogDocWriterNew final : public DocWriter {
-public:
-    OplogDocWriterNew(const MutableOplogEntry& oplogEntry) : _op(oplogEntry.toBSON()) {}
+    OplogDocWriter(const MutableOplogEntry& oplogEntry) : _op(oplogEntry.toBSON()) {}
 
     void writeDocument(char* start) const {
         char* buf = start;
@@ -388,47 +351,6 @@ void appendSessionInfo(OperationContext* opCtx,
                                          OplogEntryBase::kPostImageOpTimeFieldName.toString());
     }
 }
-
-OplogDocWriter _logOpWriter(OperationContext* opCtx,
-                            const char* opstr,
-                            const NamespaceString& nss,
-                            OptionalCollectionUUID uuid,
-                            const BSONObj& obj,
-                            const BSONObj* o2,
-                            bool fromMigrate,
-                            OpTime optime,
-                            Date_t wallTime,
-                            const OperationSessionInfo& sessionInfo,
-                            boost::optional<StmtId> statementId,
-                            const OplogLink& oplogLink) {
-    BSONObjBuilder b(256);
-
-    b.append("ts", optime.getTimestamp());
-    if (optime.getTerm() != -1)
-        b.append("t", optime.getTerm());
-
-    // Always write zero hash instead of using FCV to gate this for retryable writes
-    // and change stream, who expect to be able to read oplog across FCV's.
-    b.append("h", 0LL);
-    b.append("v", OplogEntry::kOplogVersion);
-    b.append("op", opstr);
-    b.append("ns", nss.ns());
-    if (uuid)
-        uuid->appendToBuilder(&b, "ui");
-
-    if (fromMigrate)
-        b.appendBool("fromMigrate", true);
-
-    if (o2)
-        b.append("o2", *o2);
-
-    invariant(wallTime != Date_t{});
-    b.appendDate(OplogEntryBase::kWallClockTimeFieldName, wallTime);
-
-    appendSessionInfo(opCtx, &b, statementId, sessionInfo, oplogLink);
-
-    return OplogDocWriter(OplogDocWriter(b.obj(), obj));
-}
 }  // end anon namespace
 
 /* we write to local.oplog.rs:
@@ -552,7 +474,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     auto wallClockTime = oplogEntry.getWallClockTime();
     invariant(wallClockTime);
 
-    OplogDocWriterNew writer(oplogEntry);
+    OplogDocWriter writer(oplogEntry);
     const DocWriter* basePtr = &writer;
     _logOpsInner(opCtx, oplogEntry.getNss(), &basePtr, &timestamp, 1, oplog, slot, *wallClockTime);
     wuow.commit();
@@ -576,7 +498,7 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
     }
 
     const size_t count = end - begin;
-    std::vector<OplogDocWriterNew> writers;
+    std::vector<OplogDocWriter> writers;
     writers.reserve(count);
     auto oplogInfo = LocalOplogInfo::get(opCtx);
 
@@ -610,7 +532,7 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         oplogEntry.setOpTime(insertStatementOplogSlot);
         oplogEntry.setStatementIdEnhanced(begin[i].stmtId);
 
-        writers.emplace_back(OplogDocWriterNew(oplogEntry));
+        writers.emplace_back(OplogDocWriter(oplogEntry));
 
         oplogEntry.setPrevWriteOpTimeInTransaction(insertStatementOplogSlot);
         timestamps[i] = insertStatementOplogSlot.getTimestamp();
