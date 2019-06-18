@@ -87,6 +87,8 @@ public:
 
     MutableOplogEntry();
 
+    Status parse(const BSONObj& object);
+
     void setSessionId(boost::optional<LogicalSessionId> value) & {
         getOperationSessionInfo().setSessionId(std::move(value));
     }
@@ -155,53 +157,53 @@ public:
 class OplogEntry : private MutableOplogEntry {
 public:
     // Make field names accessible.
-    using OplogEntryBase::kDurableReplOperationFieldName;
-    using OplogEntryBase::kOperationSessionInfoFieldName;
-    using OplogEntryBase::k_idFieldName;
-    using OplogEntryBase::kFromMigrateFieldName;
-    using OplogEntryBase::kHashFieldName;
-    using OplogEntryBase::kNssFieldName;
-    using OplogEntryBase::kObjectFieldName;
-    using OplogEntryBase::kObject2FieldName;
-    using OplogEntryBase::kOpTypeFieldName;
-    using OplogEntryBase::kPostImageOpTimeFieldName;
-    using OplogEntryBase::kPreImageOpTimeFieldName;
-    using OplogEntryBase::kPrevWriteOpTimeInTransactionFieldName;
-    using OplogEntryBase::kSessionIdFieldName;
-    using OplogEntryBase::kStatementIdFieldName;
-    using OplogEntryBase::kTermFieldName;
-    using OplogEntryBase::kTimestampFieldName;
-    using OplogEntryBase::kTxnNumberFieldName;
-    using OplogEntryBase::kUpsertFieldName;
-    using OplogEntryBase::kUuidFieldName;
-    using OplogEntryBase::kVersionFieldName;
-    using OplogEntryBase::kWallClockTimeFieldName;
+    using MutableOplogEntry::kDurableReplOperationFieldName;
+    using MutableOplogEntry::kOperationSessionInfoFieldName;
+    using MutableOplogEntry::k_idFieldName;
+    using MutableOplogEntry::kFromMigrateFieldName;
+    using MutableOplogEntry::kHashFieldName;
+    using MutableOplogEntry::kNssFieldName;
+    using MutableOplogEntry::kObjectFieldName;
+    using MutableOplogEntry::kObject2FieldName;
+    using MutableOplogEntry::kOpTypeFieldName;
+    using MutableOplogEntry::kPostImageOpTimeFieldName;
+    using MutableOplogEntry::kPreImageOpTimeFieldName;
+    using MutableOplogEntry::kPrevWriteOpTimeInTransactionFieldName;
+    using MutableOplogEntry::kSessionIdFieldName;
+    using MutableOplogEntry::kStatementIdFieldName;
+    using MutableOplogEntry::kTermFieldName;
+    using MutableOplogEntry::kTimestampFieldName;
+    using MutableOplogEntry::kTxnNumberFieldName;
+    using MutableOplogEntry::kUpsertFieldName;
+    using MutableOplogEntry::kUuidFieldName;
+    using MutableOplogEntry::kVersionFieldName;
+    using MutableOplogEntry::kWallClockTimeFieldName;
     using MutableOplogEntry::kOplogVersion;
 
     // Make serialize(), toBSON() and getters accessible.
-    using OplogEntryBase::serialize;
-    using OplogEntryBase::toBSON;
-    using OplogEntryBase::getOperationSessionInfo;
-    using OplogEntryBase::getSessionId;
-    using OplogEntryBase::getTxnNumber;
-    using OplogEntryBase::getDurableReplOperation;
-    using OplogEntryBase::getOpType;
-    using OplogEntryBase::getNss;
-    using OplogEntryBase::getUuid;
-    using OplogEntryBase::getObject;
-    using OplogEntryBase::getObject2;
-    using OplogEntryBase::getUpsert;
-    using OplogEntryBase::getTimestamp;
-    using OplogEntryBase::getTerm;
-    using OplogEntryBase::getHash;
-    using OplogEntryBase::getVersion;
-    using OplogEntryBase::getFromMigrate;
-    using OplogEntryBase::get_id;
-    using OplogEntryBase::getWallClockTime;
-    using OplogEntryBase::getStatementId;
-    using OplogEntryBase::getPrevWriteOpTimeInTransaction;
-    using OplogEntryBase::getPreImageOpTime;
-    using OplogEntryBase::getPostImageOpTime;
+    using MutableOplogEntry::serialize;
+    using MutableOplogEntry::toBSON;
+    using MutableOplogEntry::getOperationSessionInfo;
+    using MutableOplogEntry::getSessionId;
+    using MutableOplogEntry::getTxnNumber;
+    using MutableOplogEntry::getDurableReplOperation;
+    using MutableOplogEntry::getOpType;
+    using MutableOplogEntry::getNss;
+    using MutableOplogEntry::getUuid;
+    using MutableOplogEntry::getObject;
+    using MutableOplogEntry::getObject2;
+    using MutableOplogEntry::getUpsert;
+    using MutableOplogEntry::getTimestamp;
+    using MutableOplogEntry::getTerm;
+    using MutableOplogEntry::getHash;
+    using MutableOplogEntry::getVersion;
+    using MutableOplogEntry::getFromMigrate;
+    using MutableOplogEntry::get_id;
+    using MutableOplogEntry::getWallClockTime;
+    using MutableOplogEntry::getStatementId;
+    using MutableOplogEntry::getPrevWriteOpTimeInTransaction;
+    using MutableOplogEntry::getPreImageOpTime;
+    using MutableOplogEntry::getPostImageOpTime;
 
     // Make helper functions accessible.
     using MutableOplogEntry::getOpTime;
