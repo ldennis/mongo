@@ -103,44 +103,9 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
                                  std::vector<InsertStatement>::const_iterator end);
 
 /**
- * @param opstr
- *  "i" insert
- *  "u" update
- *  "d" delete
- *  "c" db cmd
- *  "n" no-op
- *  "db" declares presence of a database (ns is set to the db name + '.')
- *
- * For 'u' records, 'obj' captures the mutation made to the object but not
- * the object itself. 'o2' captures the the criteria for the object that will be modified.
- *
- * wallClockTime this specifies the wall-clock timestamp of then this oplog entry was generated. It
- *   is purely informational, may not be monotonically increasing and is not interpreted in any way
- *   by the replication subsystem.
- * stmtId specifies the statementId of an operation. For transaction operations, stmtId is always
- *   boost::none.
- * oplogLink this contains the timestamp that points to the previous write that will be
- *   linked via prevTs, and the timestamps of the oplog entry that contains the document
- *   before/after update was applied. The timestamps are ignored if isNull() is true.
- * prepare this specifies if the oplog entry should be put into a 'prepare' state.
- * oplogSlot If non-null, use this reserved oplog slot instead of a new one.
- *
  * Returns the optime of the oplog entry written to the oplog.
  * Returns a null optime if oplog was not modified.
  */
-OpTime logOp(OperationContext* opCtx,
-             const char* opstr,
-             const NamespaceString& ns,
-             OptionalCollectionUUID uuid,
-             const BSONObj& obj,
-             const BSONObj* o2,
-             bool fromMigrate,
-             Date_t wallClockTime,
-             const OperationSessionInfo& sessionInfo,
-             boost::optional<StmtId> stmtId,
-             const OplogLink& oplogLink,
-             const OplogSlot& oplogSlot);
-
 OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry);
 
 // Flush out the cached pointer to the oplog.

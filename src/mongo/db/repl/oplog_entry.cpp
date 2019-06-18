@@ -196,6 +196,16 @@ MutableOplogEntry::MutableOplogEntry() : OplogEntryBase() {
     setVersion(kOplogVersion);
 }
 
+Status MutableOplogEntry::parse(const BSONObj& object) {
+    try {
+        parseProtected(IDLParserErrorContext("OplogEntryBase"), object);
+        return Status::OK();
+    } catch (...) {
+        return exceptionToStatus();
+    }
+    MONGO_UNREACHABLE;
+}
+
 void MutableOplogEntry::setOpTime(const OpTime& opTime)& {
     setTimestamp(opTime.getTimestamp());
     if (opTime.getTerm() != OpTime::kUninitializedTerm)
