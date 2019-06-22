@@ -349,8 +349,8 @@ void appendSessionInfo(OperationContext* opCtx,
 /*
  * timestamps - an array of respective Timestamp objects for each records.
  * oplogCollection - collection to be written to.
-  * finalOpTime - the OpTime of the last DocWriter object.
-  * wallTime - the wall clock time of the corresponding oplog entry.
+ * finalOpTime - the OpTime of the last oplog record.
+ * wallTime - the wall clock time of the corresponding oplog entry.
  */
 void _logOpsInner(OperationContext* opCtx,
                   const NamespaceString& nss,
