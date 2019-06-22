@@ -358,9 +358,8 @@ StatusWithMatchExpression CollectionImpl::parseValidator(
 }
 
 Status CollectionImpl::insertDocumentsForOplog(OperationContext* opCtx,
-                                               const DocWriter* const* docs,
-                                               Timestamp* timestamps,
-                                               size_t nDocs) {
+                                               std::vector<Record>* records,
+                                               const std::vector<Timestamp>& timestamps) {
     dassert(opCtx->lockState()->isWriteLocked());
 
     // Since this is only for the OpLog, we can assume these for simplicity.
@@ -369,7 +368,7 @@ Status CollectionImpl::insertDocumentsForOplog(OperationContext* opCtx,
     invariant(!_validator);
     invariant(!_indexCatalog->haveAnyIndexes());
 
-    Status status = _recordStore->insertRecordsWithDocWriter(opCtx, docs, timestamps, nDocs);
+    Status status = _recordStore->insertRecords(opCtx, records, timestamps);
     if (!status.isOK())
         return status;
 

@@ -121,27 +121,6 @@ void checkOplogInsert(Status result) {
     massert(17322, str::stream() << "write to oplog failed: " << result.toString(), result.isOK());
 }
 
-// TODO: Stream the oplog entry directly into data region to avoid copying.
-class OplogDocWriter final : public DocWriter {
-public:
-    OplogDocWriter(const MutableOplogEntry& oplogEntry) : _op(oplogEntry.toBSON()) {}
-
-    void writeDocument(char* start) const {
-        char* buf = start;
-
-        memcpy(buf, _op.objdata(), _op.objsize());
-
-        DataView(buf).write<LittleEndian<int>>(documentSize());
-    }
-
-    size_t documentSize() const {
-        return _op.objsize();
-    }
-
-private:
-    BSONObj _op;
-};
-
 bool shouldBuildInForeground(OperationContext* opCtx,
                              const BSONObj& index,
                              const NamespaceString& indexNss,
@@ -368,17 +347,15 @@ void appendSessionInfo(OperationContext* opCtx,
 
 
 /*
- * writers - an array with size nDocs of DocWriter objects.
- * timestamps - an array with size nDocs of respective Timestamp objects for each DocWriter.
+ * timestamps - an array of respective Timestamp objects for each records.
  * oplogCollection - collection to be written to.
   * finalOpTime - the OpTime of the last DocWriter object.
   * wallTime - the wall clock time of the corresponding oplog entry.
  */
 void _logOpsInner(OperationContext* opCtx,
                   const NamespaceString& nss,
-                  const DocWriter* const* writers,
-                  Timestamp* timestamps,
-                  size_t nDocs,
+                  std::vector<Record>* records,
+                  const std::vector<Timestamp>& timestamps,
                   Collection* oplogCollection,
                   OpTime finalOpTime,
                   Date_t wallTime) {
@@ -391,7 +368,7 @@ void _logOpsInner(OperationContext* opCtx,
 
     // we jump through a bunch of hoops here to avoid copying the obj buffer twice --
     // instead we do a single copy to the destination in the record store.
-    checkOplogInsert(oplogCollection->insertDocumentsForOplog(opCtx, writers, timestamps, nDocs));
+    checkOplogInsert(oplogCollection->insertDocumentsForOplog(opCtx, records, timestamps));
 
     // Set replCoord last optime only after we're sure the WUOW didn't abort and roll back.
     opCtx->recoveryUnit()->onCommit(
@@ -443,7 +420,6 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     }
 
     OplogSlot slot = oplogEntry.getOpTime();
-    Timestamp timestamp = slot.getTimestamp();
 
     auto oplogInfo = LocalOplogInfo::get(opCtx);
 
@@ -464,7 +440,6 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     WriteUnitOfWork wuow(opCtx);
     if (slot.isNull()) {
         slot = oplogInfo->getNextOpTimes(opCtx, 1U)[0];
-        timestamp = slot.getTimestamp();
         // TODO: make the oplogEntry reference const instead of using the guard.
         resetOpTimeOnExit = true;
         oplogEntry.setOpTime(slot);
@@ -474,9 +449,14 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     auto wallClockTime = oplogEntry.getWallClockTime();
     invariant(wallClockTime);
 
-    OplogDocWriter writer(oplogEntry);
-    const DocWriter* basePtr = &writer;
-    _logOpsInner(opCtx, oplogEntry.getNss(), &basePtr, &timestamp, 1, oplog, slot, *wallClockTime);
+    std::vector<Record> records;
+    auto oplogToInsert = oplogEntry.toBSON();
+    records.emplace_back(Record{RecordId(),  // The storage engine will assign its own RecordId when
+                                             // we pass one that is null.
+                                RecordData(oplogToInsert.objdata(), oplogToInsert.objsize())});
+    std::vector<Timestamp> timestamps;
+    timestamps.emplace_back(slot.getTimestamp());
+    _logOpsInner(opCtx, oplogEntry.getNss(), &records, timestamps, oplog, slot, *wallClockTime);
     wuow.commit();
     return slot;
 }
@@ -498,8 +478,6 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
     }
 
     const size_t count = end - begin;
-    std::vector<OplogDocWriter> writers;
-    writers.reserve(count);
     auto oplogInfo = LocalOplogInfo::get(opCtx);
 
     // Obtain Collection exclusive intent write lock for non-document-locking storage engines.
@@ -519,8 +497,9 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         oplogEntry.setPrevWriteOpTimeInTransaction(txnParticipant.getLastWriteOpTime());
     }
 
-    auto timestamps = std::make_unique<Timestamp[]>(count);
+    std::vector<Timestamp> timestamps;
     std::vector<OpTime> opTimes;
+    std::vector<BSONObj> oplogToInsert;
     for (size_t i = 0; i < count; i++) {
         // Make a mutable copy.
         auto insertStatementOplogSlot = begin[i].oplogSlot;
@@ -532,10 +511,10 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         oplogEntry.setOpTime(insertStatementOplogSlot);
         oplogEntry.setStatementIdEnhanced(begin[i].stmtId);
 
-        writers.emplace_back(OplogDocWriter(oplogEntry));
+        oplogToInsert.emplace_back(oplogEntry.toBSON());
+        timestamps.emplace_back(insertStatementOplogSlot.getTimestamp());
 
         oplogEntry.setPrevWriteOpTimeInTransaction(insertStatementOplogSlot);
-        timestamps[i] = insertStatementOplogSlot.getTimestamp();
         opTimes.push_back(insertStatementOplogSlot);
     }
 
@@ -547,9 +526,11 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         sleepmillis(numMillis);
     }
 
-    std::unique_ptr<DocWriter const* []> basePtrs(new DocWriter const*[count]);
-    for (size_t i = 0; i < count; i++) {
-        basePtrs[i] = &writers[i];
+    std::vector<Record> records;
+    for (auto& doc : oplogToInsert) {
+        records.emplace_back(Record{RecordId(),  // The storage engine will assign its own RecordId
+                                                 // when we pass one that is null.
+                                    RecordData(doc.objdata(), doc.objsize())});
     }
 
     invariant(!opTimes.empty());
@@ -558,14 +539,8 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
     auto oplog = oplogInfo->getCollection();
     auto wallClockTime = oplogEntry.getWallClockTime();
     invariant(wallClockTime);
-    _logOpsInner(opCtx,
-                 oplogEntry.getNss(),
-                 basePtrs.get(),
-                 timestamps.get(),
-                 count,
-                 oplog,
-                 lastOpTime,
-                 *wallClockTime);
+    _logOpsInner(
+        opCtx, oplogEntry.getNss(), &records, timestamps, oplog, lastOpTime, *wallClockTime);
     wuow.commit();
     return opTimes;
 }
