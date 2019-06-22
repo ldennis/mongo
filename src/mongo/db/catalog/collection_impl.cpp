@@ -359,8 +359,6 @@ Status CollectionImpl::insertDocumentsForOplog(OperationContext* opCtx,
     dassert(opCtx->lockState()->isWriteLocked());
 
     // Since this is only for the OpLog, we can assume these for simplicity.
-    // This also means that we do not need to forward this object to the OpObserver, which is good
-    // because it would defeat the purpose of using DocWriter.
     invariant(!_validator);
     invariant(!_indexCatalog->haveAnyIndexes());
 
