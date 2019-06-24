@@ -647,7 +647,7 @@ private:
                 auto oplogEntries =
                     fassertNoTrace(31004, _getNextApplierBatchFn(opCtx.get(), batchLimits));
                 for (const auto& oplogEntry : oplogEntries) {
-                    ops.emplace_back(oplogEntry.getRaw());
+                    ops.emplace_back(oplogEntry);
                 }
 
                 // If we don't have anything in the queue, wait a bit for something to appear.

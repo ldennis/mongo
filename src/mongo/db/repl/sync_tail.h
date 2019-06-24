@@ -151,10 +151,10 @@ public:
             return _batch;
         }
 
-        void emplace_back(BSONObj obj) {
+        void emplace_back(OplogEntry oplog) {
             invariant(!_mustShutdown);
-            _bytes += obj.objsize();
-            _batch.emplace_back(std::move(obj));
+            _bytes += oplog.getRawObjSizeBytes();
+            _batch.emplace_back(std::move(oplog));
         }
         void pop_back() {
             _bytes -= back().getRawObjSizeBytes();
