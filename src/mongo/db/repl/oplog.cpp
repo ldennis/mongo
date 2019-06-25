@@ -347,10 +347,11 @@ void appendSessionInfo(OperationContext* opCtx,
 
 
 /*
- * timestamps - an array of respective Timestamp objects for each records.
+ * records - a vector of oplog records to be written.
+ * timestamps - a vector of respective Timestamp objects for each oplog record.
  * oplogCollection - collection to be written to.
  * finalOpTime - the OpTime of the last oplog record.
- * wallTime - the wall clock time of the corresponding oplog entry.
+ * wallTime - the wall clock time of the last oplog record.
  */
 void _logOpsInner(OperationContext* opCtx,
                   const NamespaceString& nss,
@@ -366,8 +367,6 @@ void _logOpsInner(OperationContext* opCtx,
                   str::stream() << "logOp() but can't accept write to collection " << nss.ns());
     }
 
-    // we jump through a bunch of hoops here to avoid copying the obj buffer twice --
-    // instead we do a single copy to the destination in the record store.
     checkOplogInsert(oplogCollection->insertDocumentsForOplog(opCtx, records, timestamps));
 
     // Set replCoord last optime only after we're sure the WUOW didn't abort and roll back.
@@ -405,7 +404,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     invariant(oplogEntry.getUuid() || oplogEntry.getOpType() == OpTypeEnum::kNoop ||
                   oplogEntry.getOpType() == OpTypeEnum::kCommand,
               str::stream() << "Expected uuid for logOp with oplog entry: "
-                            << oplogEntry.toBSON().toString());
+                            << redact(oplogEntry.toBSON()));
 
     auto replCoord = ReplicationCoordinator::get(opCtx);
     // For commands, the test below is on the command ns and therefore does not check for
@@ -451,6 +450,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
 
     std::vector<Record> records;
     auto oplogToInsert = oplogEntry.toBSON();
+    // Pass the serialized oplog BSONObj buffer directly to record store to avoid copying.
     records.emplace_back(Record{RecordId(),  // The storage engine will assign its own RecordId when
                                              // we pass one that is null.
                                 RecordData(oplogToInsert.objdata(), oplogToInsert.objsize())});
@@ -528,6 +528,7 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
 
     std::vector<Record> records;
     for (auto& doc : oplogToInsert) {
+        // Pass the serialized oplog BSONObj buffer directly to record store to avoid copying.
         records.emplace_back(Record{RecordId(),  // The storage engine will assign its own RecordId
                                                  // when we pass one that is null.
                                     RecordData(doc.objdata(), doc.objsize())});

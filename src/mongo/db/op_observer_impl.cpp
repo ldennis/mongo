@@ -78,7 +78,7 @@ constexpr auto kNumRecordsFieldName = "numRecords"_sd;
 constexpr auto kMsgFieldName = "msg"_sd;
 constexpr long long kInvalidNumRecords = -1LL;
 
-inline void setOplogLink(MutableOplogEntry& oplogEntry, const repl::OplogLink& oplogLink) {
+void setOplogLink(MutableOplogEntry& oplogEntry, const repl::OplogLink& oplogLink) {
     oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
 
     if (!oplogLink.preImageOpTime.isNull()) {
@@ -90,7 +90,7 @@ inline void setOplogLink(MutableOplogEntry& oplogEntry, const repl::OplogLink& o
     }
 }
 
-inline repl::OpTime logOperation(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
+repl::OpTime logOperation(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     auto& times = OpObserver::Times::get(opCtx).reservedOpTimes;
     auto opTime = repl::logOp(opCtx, oplogEntry);
     times.push_back(opTime);
@@ -185,9 +185,10 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setWallClockTime(opTimes.wallClockTime);
 
     if (!storeObj.isEmpty() && opCtx->getTxnNumber()) {
-        oplogEntry.setOpType(repl::OpTypeEnum::kNoop);
-        oplogEntry.setObject(std::move(storeObj));
-        auto noteUpdateOpTime = logOperation(opCtx, oplogEntry);
+        MutableOplogEntry noopEntry = oplogEntry;
+        noopEntry.setOpType(repl::OpTypeEnum::kNoop);
+        noopEntry.setObject(std::move(storeObj));
+        auto noteUpdateOpTime = logOperation(opCtx, noopEntry);
 
         opTimes.prePostImageOpTime = noteUpdateOpTime;
 
@@ -237,9 +238,10 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     oplogEntry.setWallClockTime(opTimes.wallClockTime);
 
     if (deletedDoc && opCtx->getTxnNumber()) {
-        oplogEntry.setOpType(repl::OpTypeEnum::kNoop);
-        oplogEntry.setObject(deletedDoc.get());
-        auto noteOplog = logOperation(opCtx, oplogEntry);
+        MutableOplogEntry noopEntry = oplogEntry;
+        noopEntry.setOpType(repl::OpTypeEnum::kNoop);
+        noopEntry.setObject(deletedDoc.get());
+        auto noteOplog = logOperation(opCtx, noopEntry);
         opTimes.prePostImageOpTime = noteOplog;
         oplogLink.preImageOpTime = noteOplog;
     }
