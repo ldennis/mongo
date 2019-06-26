@@ -191,10 +191,11 @@ ReplOperation MutableOplogEntry::makeDeleteOperation(const NamespaceString& nss,
     return op;
 }
 
-Status MutableOplogEntry::parse(const BSONObj& object) {
+StatusWith<MutableOplogEntry> MutableOplogEntry::parse(const BSONObj& object) {
     try {
-        parseProtected(IDLParserErrorContext("OplogEntryBase"), object);
-        return Status::OK();
+        MutableOplogEntry oplogEntry;
+        oplogEntry.parseProtected(IDLParserErrorContext("OplogEntryBase"), object);
+        return oplogEntry;
     } catch (...) {
         return exceptionToStatus();
     }

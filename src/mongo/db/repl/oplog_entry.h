@@ -85,9 +85,9 @@ public:
                                              boost::optional<UUID> uuid,
                                              const BSONObj& docToDelete);
 
-    MutableOplogEntry() : OplogEntryBase() {}
+    static StatusWith<MutableOplogEntry> parse(const BSONObj& object);
 
-    Status parse(const BSONObj& object);
+    MutableOplogEntry() : OplogEntryBase() {}
 
     void setSessionId(boost::optional<LogicalSessionId> value) & {
         getOperationSessionInfo().setSessionId(std::move(value));

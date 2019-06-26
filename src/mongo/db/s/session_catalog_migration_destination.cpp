@@ -132,8 +132,7 @@ void setPrePostImageTs(const ProcessOplogResult& lastResult, repl::MutableOplogE
  * Parses the oplog into an oplog entry and makes sure that it contains the expected fields.
  */
 repl::MutableOplogEntry parseOplog(const BSONObj& oplogBSON) {
-    repl::MutableOplogEntry oplogEntry;
-    uassertStatusOK(oplogEntry.parse(oplogBSON));
+    auto oplogEntry = uassertStatusOK(repl::MutableOplogEntry::parse(oplogBSON));
 
     // Session oplog entries must always contain wall clock time, because we will not be
     // transferring anything from a previous version of the server

@@ -867,7 +867,7 @@ std::vector<repl::ReplOperation>::const_iterator packTransactionStatementsForApp
 OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
                                        MutableOplogEntry& oplogEntry,
                                        boost::optional<DurableTxnStateEnum> txnState,
-                                       boost::optional<repl::OpTime> startOpTime = boost::none,
+                                       boost::optional<repl::OpTime> startOpTime,
                                        const bool updateTxnTable = true) {
     oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
     oplogEntry.setNss({"admin", "$cmd"});
@@ -954,9 +954,24 @@ int logOplogEntriesForTransaction(OperationContext* opCtx,
                 // commit or implicit prepare, i.e. we omit the 'partialTxn' field.
                 auto firstOp = stmtsIter == stmts.begin();
                 auto lastOp = nextStmt == stmts.end();
-                auto isPartialTxn = !lastOp;
+
                 auto implicitCommit = lastOp && !prepare;
                 auto implicitPrepare = lastOp && prepare;
+                auto isPartialTxn = !lastOp;
+                // A 'prepare' oplog entry should never include a 'partialTxn' field.
+                invariant(!(isPartialTxn && implicitPrepare));
+                if (implicitPrepare) {
+                    applyOpsBuilder.append("prepare", true);
+                }
+                if (isPartialTxn) {
+                    applyOpsBuilder.append("partialTxn", true);
+                }
+
+                // The 'count' field gives the total number of individual operations in the
+                // transaction, and is included on a non-initial implicit commit or prepare entry.
+                if (lastOp && !firstOp) {
+                    applyOpsBuilder.append("count", static_cast<long long>(stmts.size()));
+                }
 
                 // For both prepared and unprepared transactions, update the transactions table on
                 // the first and last op.
@@ -977,23 +992,6 @@ int logOplogEntriesForTransaction(OperationContext* opCtx,
                 // transaction, except when transitioning to 'committed' state, in which it should
                 // no longer be set.
                 auto startOpTime = boost::make_optional(!implicitCommit, firstOpTimeOfTxn);
-
-                // The 'count' field gives the total number of individual operations in the
-                // transaction, and is included on a non-initial implicit commit or prepare entry.
-                auto count =
-                    (lastOp && !firstOp) ? boost::optional<long long>(stmts.size()) : boost::none;
-
-                // A 'prepare' oplog entry should never include a 'partialTxn' field.
-                invariant(!(isPartialTxn && implicitPrepare));
-                if (implicitPrepare) {
-                    applyOpsBuilder.append("prepare", true);
-                }
-                if (isPartialTxn) {
-                    applyOpsBuilder.append("partialTxn", true);
-                }
-                if (count) {
-                    applyOpsBuilder.append("count", *count);
-                }
 
                 MutableOplogEntry oplogEntry;
                 oplogEntry.setOpTime(oplogSlot);
@@ -1093,7 +1091,8 @@ void OpObserverImpl::onUnpreparedTransactionCommit(
         auto txnState = boost::make_optional(
             fcv >= ServerGlobalParams::FeatureCompatibility::Version::kUpgradingTo42,
             DurableTxnStateEnum::kCommitted);
-        commitOpTime = logApplyOpsForTransaction(opCtx, oplogEntry, txnState).writeOpTime;
+        commitOpTime =
+            logApplyOpsForTransaction(opCtx, oplogEntry, txnState, boost::none).writeOpTime;
     } else {
         // Reserve all the optimes in advance, so we only need to get the optime mutex once.  We
         // reserve enough entries for all statements in the transaction.
