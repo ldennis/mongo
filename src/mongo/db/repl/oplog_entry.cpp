@@ -191,11 +191,6 @@ ReplOperation MutableOplogEntry::makeDeleteOperation(const NamespaceString& nss,
     return op;
 }
 
-MutableOplogEntry::MutableOplogEntry() : OplogEntryBase() {
-    // Default version to kOplogVersion.
-    setVersion(kOplogVersion);
-}
-
 Status MutableOplogEntry::parse(const BSONObj& object) {
     try {
         parseProtected(IDLParserErrorContext("OplogEntryBase"), object);

@@ -85,7 +85,7 @@ public:
                                              boost::optional<UUID> uuid,
                                              const BSONObj& docToDelete);
 
-    MutableOplogEntry();
+    MutableOplogEntry() : OplogEntryBase() {}
 
     Status parse(const BSONObj& object);
 
