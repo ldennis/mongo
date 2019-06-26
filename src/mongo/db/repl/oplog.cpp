@@ -291,47 +291,6 @@ void createIndexForApplyOps(OperationContext* opCtx,
     }
 }
 
-namespace {
-
-/**
- * Attaches the session information of a write to an oplog entry if it exists.
- */
-void appendSessionInfo(OperationContext* opCtx,
-                       BSONObjBuilder* builder,
-                       boost::optional<StmtId> statementId,
-                       const OperationSessionInfo& sessionInfo,
-                       const OplogLink& oplogLink) {
-    if (!sessionInfo.getTxnNumber()) {
-        return;
-    }
-
-    // Note: certain non-transaction operations, like implicit collection creation will have an
-    // uninitialized statementId.
-    if (statementId == kUninitializedStmtId) {
-        return;
-    }
-
-    sessionInfo.serialize(builder);
-
-    // Only non-transaction operations will have a statementId.
-    if (statementId) {
-        builder->append(OplogEntryBase::kStatementIdFieldName, *statementId);
-    }
-    oplogLink.prevOpTime.append(builder,
-                                OplogEntryBase::kPrevWriteOpTimeInTransactionFieldName.toString());
-
-    if (!oplogLink.preImageOpTime.isNull()) {
-        oplogLink.preImageOpTime.append(builder,
-                                        OplogEntryBase::kPreImageOpTimeFieldName.toString());
-    }
-
-    if (!oplogLink.postImageOpTime.isNull()) {
-        oplogLink.postImageOpTime.append(builder,
-                                         OplogEntryBase::kPostImageOpTimeFieldName.toString());
-    }
-}
-}  // end anon namespace
-
 /* we write to local.oplog.rs:
      { ts : ..., h: ..., v: ..., op: ..., etc }
    ts: an OpTime timestamp
@@ -410,11 +369,10 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     // For commands, the test below is on the command ns and therefore does not check for
     // specific namespaces such as system.profile. This is the caller's responsibility.
     if (replCoord->isOplogDisabledFor(opCtx, oplogEntry.getNss())) {
-        auto statementId = oplogEntry.getStatementId();
         uassert(ErrorCodes::IllegalOperation,
                 str::stream() << "retryable writes is not supported for unreplicated ns: "
                               << oplogEntry.getNss().ns(),
-                !statementId || *statementId == kUninitializedStmtId);
+                oplogEntry.getStatementId().value_or(kUninitializedStmtId) == kUninitializedStmtId);
         return {};
     }
 
