@@ -514,7 +514,8 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         oplogToInsert.emplace_back(oplogEntry.toBSON());
         timestamps.emplace_back(insertStatementOplogSlot.getTimestamp());
 
-        oplogEntry.setPrevWriteOpTimeInTransaction(insertStatementOplogSlot);
+        if (txnParticipant)
+            oplogEntry.setPrevWriteOpTimeInTransaction(insertStatementOplogSlot);
         opTimes.push_back(insertStatementOplogSlot);
     }
 

@@ -176,8 +176,8 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
         oplogEntry.setSessionId(opCtx->getLogicalSessionId());
         oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
+        oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
     }
-    oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
     oplogEntry.setStatementIdEnhanced(args.updateArgs.stmtId);
 
     OpTimeBundle opTimes;
@@ -204,7 +204,8 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setObject(args.updateArgs.update);
     oplogEntry.setObject2(args.updateArgs.criteria);
     oplogEntry.setFromMigrateEnhanced(args.updateArgs.fromMigrate);
-    setOplogLink(oplogEntry, oplogLink);
+    if (txnParticipant)
+        setOplogLink(oplogEntry, oplogLink);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
 
     return opTimes;
@@ -229,8 +230,8 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
         oplogEntry.setSessionId(opCtx->getLogicalSessionId());
         oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
+        oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
     }
-    oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
     oplogEntry.setStatementIdEnhanced(stmtId);
 
     OpTimeBundle opTimes;
@@ -249,7 +250,8 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     oplogEntry.setOpType(repl::OpTypeEnum::kDelete);
     oplogEntry.setObject(documentKeyDecoration(opCtx));
     oplogEntry.setFromMigrateEnhanced(fromMigrate);
-    setOplogLink(oplogEntry, oplogLink);
+    if (txnParticipant)
+        setOplogLink(oplogEntry, oplogLink);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
     return opTimes;
 }
