@@ -376,10 +376,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
         return {};
     }
 
-    OplogSlot slot = oplogEntry.getOpTime();
-
     auto oplogInfo = LocalOplogInfo::get(opCtx);
-
     // Obtain Collection exclusive intent write lock for non-document-locking storage engines.
     boost::optional<Lock::DBLock> dbWriteLock;
     boost::optional<Lock::CollectionLock> collWriteLock;
@@ -388,8 +385,13 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
         collWriteLock.emplace(opCtx, oplogInfo->getOplogCollectionName(), MODE_IX);
     }
 
-    bool resetOpTimeOnExit = false;
-    auto onExitGuard = makeGuard([&] {
+    // If an OpTime is not specified (i.e. isNull), a new OpTime will be assigned to the oplog entry
+    // within the WUOW. If a new OpTime is assigned, it needs to be reset back to a null OpTime
+    // before exiting this function so that the same oplog entry instance can be reused for logOp()
+    // again. For example, if the WUOW gets aborted within a writeConflictRetry loop, we need to
+    // reset the OpTime to null so a new OpTime will be assigned on retry.
+    OplogSlot slot = oplogEntry.getOpTime();
+    auto resetOpTimeGuard = makeGuard([&, resetOpTimeOnExit = bool(slot.isNull()) ] {
         if (resetOpTimeOnExit)
             oplogEntry.setOpTime(OplogSlot());
     });
@@ -398,7 +400,6 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     if (slot.isNull()) {
         slot = oplogInfo->getNextOpTimes(opCtx, 1U)[0];
         // TODO: make the oplogEntry reference const instead of using the guard.
-        resetOpTimeOnExit = true;
         oplogEntry.setOpTime(slot);
     }
 
@@ -406,14 +407,11 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     auto wallClockTime = oplogEntry.getWallClockTime();
     invariant(wallClockTime);
 
-    std::vector<Record> records;
-    auto oplogToInsert = oplogEntry.toBSON();
-    // Pass the serialized oplog BSONObj buffer directly to record store to avoid copying.
-    records.emplace_back(Record{RecordId(),  // The storage engine will assign its own RecordId when
-                                             // we pass one that is null.
-                                RecordData(oplogToInsert.objdata(), oplogToInsert.objsize())});
-    std::vector<Timestamp> timestamps;
-    timestamps.emplace_back(slot.getTimestamp());
+    auto bsonOplogEntry = oplogEntry.toBSON();
+    // The storage engine will assign its own RecordId when we pass one that is null.
+    std::vector<Record> records{
+        {RecordId(), RecordData(bsonOplogEntry.objdata(), bsonOplogEntry.objsize())}};
+    std::vector<Timestamp> timestamps{slot.getTimestamp()};
     _logOpsInner(opCtx, oplogEntry.getNss(), &records, timestamps, oplog, slot, *wallClockTime);
     wuow.commit();
     return slot;

@@ -134,8 +134,8 @@ public:
     /**
      * Same as setFromMigrate but only set when it is true.
      */
-    void setFromMigrateEnhanced(boost::optional<bool> value) & {
-        if (value && *value)
+    void setFromMigrateIfTrue(bool value) & {
+        if (value)
             setFromMigrate(value);
     }
 

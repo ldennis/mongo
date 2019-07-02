@@ -177,8 +177,8 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
         oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
         oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
+        oplogEntry.setStatementIdEnhanced(args.updateArgs.stmtId);
     }
-    oplogEntry.setStatementIdEnhanced(args.updateArgs.stmtId);
 
     OpTimeBundle opTimes;
     opTimes.wallClockTime = getWallClockTimeForOpLog(opCtx);
@@ -203,7 +203,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setOpType(repl::OpTypeEnum::kUpdate);
     oplogEntry.setObject(args.updateArgs.update);
     oplogEntry.setObject2(args.updateArgs.criteria);
-    oplogEntry.setFromMigrateEnhanced(args.updateArgs.fromMigrate);
+    oplogEntry.setFromMigrateIfTrue(args.updateArgs.fromMigrate);
     if (txnParticipant)
         setOplogLink(oplogEntry, oplogLink);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
@@ -231,8 +231,8 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
         oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
         oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
+        oplogEntry.setStatementIdEnhanced(stmtId);
     }
-    oplogEntry.setStatementIdEnhanced(stmtId);
 
     OpTimeBundle opTimes;
     opTimes.wallClockTime = getWallClockTimeForOpLog(opCtx);
@@ -249,7 +249,7 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
 
     oplogEntry.setOpType(repl::OpTypeEnum::kDelete);
     oplogEntry.setObject(documentKeyDecoration(opCtx));
-    oplogEntry.setFromMigrateEnhanced(fromMigrate);
+    oplogEntry.setFromMigrateIfTrue(fromMigrate);
     if (txnParticipant)
         setOplogLink(oplogEntry, oplogLink);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
@@ -284,7 +284,7 @@ void OpObserverImpl::onCreateIndex(OperationContext* opCtx,
     oplogEntry.setUuid(uuid);
     oplogEntry.setObject(builder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setFromMigrateEnhanced(fromMigrate);
+    oplogEntry.setFromMigrateIfTrue(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
 
@@ -316,7 +316,7 @@ void OpObserverImpl::onStartIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setFromMigrateEnhanced(fromMigrate);
+    oplogEntry.setFromMigrateIfTrue(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
 
@@ -348,7 +348,7 @@ void OpObserverImpl::onCommitIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setFromMigrateEnhanced(fromMigrate);
+    oplogEntry.setFromMigrateIfTrue(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
 
@@ -380,7 +380,7 @@ void OpObserverImpl::onAbortIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
-    oplogEntry.setFromMigrateEnhanced(fromMigrate);
+    oplogEntry.setFromMigrateIfTrue(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
 
@@ -414,7 +414,7 @@ void OpObserverImpl::onInserts(OperationContext* opCtx,
         MutableOplogEntry oplogEntry;
         oplogEntry.setNss(nss);
         oplogEntry.setUuid(uuid);
-        oplogEntry.setFromMigrateEnhanced(fromMigrate);
+        oplogEntry.setFromMigrateIfTrue(fromMigrate);
         lastWriteDate = getWallClockTimeForOpLog(opCtx);
         oplogEntry.setWallClockTime(lastWriteDate);
 
@@ -868,7 +868,7 @@ OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
                                        MutableOplogEntry& oplogEntry,
                                        boost::optional<DurableTxnStateEnum> txnState,
                                        boost::optional<repl::OpTime> startOpTime,
-                                       const bool updateTxnTable = true) {
+                                       const bool updateTxnTable) {
     oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
     oplogEntry.setNss({"admin", "$cmd"});
     oplogEntry.setSessionId(opCtx->getLogicalSessionId());
@@ -1083,7 +1083,8 @@ void OpObserverImpl::onUnpreparedTransactionCommit(
         oplogEntry.setStatementIdEnhanced(StmtId(0));
 
         BSONObjBuilder applyOpsBuilder;
-        // TODO(SERVER-41470): Remove this once old transaction format is no longer needed.
+        // TODO(SERVER-41470): Remove limitSize==false once old transaction format is no longer
+        // needed.
         packTransactionStatementsForApplyOps(
             &applyOpsBuilder, statements.begin(), statements.end(), false /* limitSize */);
         oplogEntry.setObject(applyOpsBuilder.done());
@@ -1091,8 +1092,9 @@ void OpObserverImpl::onUnpreparedTransactionCommit(
         auto txnState = boost::make_optional(
             fcv >= ServerGlobalParams::FeatureCompatibility::Version::kUpgradingTo42,
             DurableTxnStateEnum::kCommitted);
-        commitOpTime =
-            logApplyOpsForTransaction(opCtx, oplogEntry, txnState, boost::none).writeOpTime;
+        commitOpTime = logApplyOpsForTransaction(
+                           opCtx, oplogEntry, txnState, boost::none, true /* updateTxnTable */)
+                           .writeOpTime;
     } else {
         // Reserve all the optimes in advance, so we only need to get the optime mutex once.  We
         // reserve enough entries for all statements in the transaction.
@@ -1170,7 +1172,8 @@ void OpObserverImpl::onTransactionPrepare(OperationContext* opCtx,
                 oplogEntry.setPrevWriteOpTimeInTransaction(lastWriteOpTime);
 
                 BSONObjBuilder applyOpsBuilder;
-                // TODO(SERVER-41470): Remove this once old transaction format is no longer needed.
+                // TODO(SERVER-41470): Remove limitSize==false once old transaction format is no
+                // longer needed.
                 packTransactionStatementsForApplyOps(
                     &applyOpsBuilder, statements.begin(), statements.end(), false /* limitSize */);
                 applyOpsBuilder.append("prepare", true);
@@ -1179,7 +1182,8 @@ void OpObserverImpl::onTransactionPrepare(OperationContext* opCtx,
                 auto txnState = boost::make_optional(
                     fcv >= ServerGlobalParams::FeatureCompatibility::Version::kUpgradingTo42,
                     DurableTxnStateEnum::kPrepared);
-                logApplyOpsForTransaction(opCtx, oplogEntry, txnState, prepareOpTime);
+                logApplyOpsForTransaction(
+                    opCtx, oplogEntry, txnState, prepareOpTime, true /* updateTxnTable */);
                 wuow.commit();
             });
     } else {
@@ -1218,8 +1222,11 @@ void OpObserverImpl::onTransactionPrepare(OperationContext* opCtx,
                     oplogEntry.setOpTime(oplogSlot);
                     oplogEntry.setPrevWriteOpTimeInTransaction(repl::OpTime());
                     oplogEntry.setObject(applyOpsBuilder.done());
-                    logApplyOpsForTransaction(
-                        opCtx, oplogEntry, DurableTxnStateEnum::kPrepared, oplogSlot);
+                    logApplyOpsForTransaction(opCtx,
+                                              oplogEntry,
+                                              DurableTxnStateEnum::kPrepared,
+                                              oplogSlot,
+                                              true /* updateTxnTable */);
                 }
                 wuow.commit();
             });
