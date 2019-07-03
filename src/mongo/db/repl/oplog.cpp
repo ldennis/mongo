@@ -456,6 +456,7 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
     std::vector<OpTime> opTimes(count);
     std::vector<Timestamp> timestamps(count);
     std::vector<BSONObj> bsonOplogEntries(count);
+    std::vector<Record> records(count);
     for (size_t i = 0; i < count; i++) {
         // Make a copy from the template for each insert oplog entry.
         MutableOplogEntry oplogEntry = oplogEntryTemplate;
@@ -473,10 +474,12 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
             oplogEntry.setStatementIdEnhanced(begin[i].stmtId);
         }
 
-        bsonOplogEntries[i] = oplogEntry.toBSON();
-        timestamps[i] = insertStatementOplogSlot.getTimestamp();
-
         opTimes[i] = insertStatementOplogSlot;
+        timestamps[i] = insertStatementOplogSlot.getTimestamp();
+        bsonOplogEntries[i] = oplogEntry.toBSON();
+        // The storage engine will assign its own RecordId when we pass one that is null.
+        records[i] = Record{
+            RecordId(), RecordData(bsonOplogEntries[i].objdata(), bsonOplogEntries[i].objsize())};
     }
 
     MONGO_FAIL_POINT_BLOCK(sleepBetweenInsertOpTimeGenerationAndLogOp, customWait) {
@@ -485,13 +488,6 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         log() << "Sleeping for " << numMillis << "ms after receiving " << count << " optimes from "
               << opTimes.front() << " to " << opTimes.back();
         sleepmillis(numMillis);
-    }
-
-    std::vector<Record> records(count);
-    for (size_t i = 0; i < count; i++) {
-        const auto& doc = bsonOplogEntries[i];
-        // The storage engine will assign its own RecordId when we pass one that is null.
-        records[i] = Record{RecordId(), RecordData(doc.objdata(), doc.objsize())};
     }
 
     invariant(!opTimes.empty());
