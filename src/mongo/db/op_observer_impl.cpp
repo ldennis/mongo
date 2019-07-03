@@ -90,7 +90,14 @@ void setOplogLink(MutableOplogEntry& oplogEntry, const repl::OplogLink& oplogLin
     }
 }
 
+Date_t getWallClockTimeForOpLog(OperationContext* opCtx) {
+    auto const clockSource = opCtx->getServiceContext()->getFastClockSource();
+    return clockSource->now();
+}
+
 repl::OpTime logOperation(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
+    if (!oplogEntry.getWallClockTime())
+        oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     auto& times = OpObserver::Times::get(opCtx).reservedOpTimes;
     auto opTime = repl::logOp(opCtx, oplogEntry);
     times.push_back(opTime);
@@ -141,11 +148,6 @@ BSONObj makeObject2ForDropOrRename(uint64_t numRecords) {
     }
     auto obj = obj2Builder.obj();
     return obj;
-}
-
-Date_t getWallClockTimeForOpLog(OperationContext* opCtx) {
-    auto const clockSource = opCtx->getServiceContext()->getFastClockSource();
-    return clockSource->now();
 }
 
 struct OpTimeBundle {
@@ -283,7 +285,6 @@ void OpObserverImpl::onCreateIndex(OperationContext* opCtx,
     oplogEntry.setNss(nss.getCommandNS());
     oplogEntry.setUuid(uuid);
     oplogEntry.setObject(builder.done());
-    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
@@ -315,7 +316,6 @@ void OpObserverImpl::onStartIndexBuild(OperationContext* opCtx,
     oplogEntry.setNss(nss.getCommandNS());
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
-    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
@@ -347,7 +347,6 @@ void OpObserverImpl::onCommitIndexBuild(OperationContext* opCtx,
     oplogEntry.setNss(nss.getCommandNS());
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
-    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
@@ -379,7 +378,6 @@ void OpObserverImpl::onAbortIndexBuild(OperationContext* opCtx,
     oplogEntry.setNss(nss.getCommandNS());
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
-    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
     logOperation(opCtx, oplogEntry);
 }
@@ -597,7 +595,6 @@ void OpObserverImpl::onInternalOpMessage(OperationContext* opCtx,
     oplogEntry.setUuid(uuid);
     oplogEntry.setObject(msgObj);
     oplogEntry.setObject2(o2MsgObj);
-    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     logOperation(opCtx, oplogEntry);
 }
 
@@ -614,7 +611,6 @@ void OpObserverImpl::onCreateCollection(OperationContext* opCtx,
         oplogEntry.setNss(collectionName.getCommandNS());
         oplogEntry.setUuid(options.uuid);
         oplogEntry.setObject(makeCreateCollCmdObj(collectionName, options, idIndex));
-        oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
         oplogEntry.setOpTime(createOpTime);
         logOperation(opCtx, oplogEntry);
     }
@@ -644,7 +640,6 @@ void OpObserverImpl::onCollMod(OperationContext* opCtx,
         oplogEntry.setUuid(uuid);
         oplogEntry.setObject(makeCollModCmdObj(collModCmd, oldCollOptions, ttlInfo));
         oplogEntry.setObject2(o2Builder.done());
-        oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
         logOperation(opCtx, oplogEntry);
     }
 
@@ -669,7 +664,6 @@ void OpObserverImpl::onDropDatabase(OperationContext* opCtx, const std::string& 
     oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
     oplogEntry.setNss({dbName, "$cmd"});
     oplogEntry.setObject(BSON("dropDatabase" << 1));
-    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     logOperation(opCtx, oplogEntry);
 
     uassert(
@@ -693,7 +687,6 @@ repl::OpTime OpObserverImpl::onDropCollection(OperationContext* opCtx,
         oplogEntry.setUuid(uuid);
         oplogEntry.setObject(BSON("drop" << collectionName.coll()));
         oplogEntry.setObject2(makeObject2ForDropOrRename(numRecords));
-        oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
         logOperation(opCtx, oplogEntry);
     }
 
@@ -721,7 +714,6 @@ void OpObserverImpl::onDropIndex(OperationContext* opCtx,
     oplogEntry.setUuid(uuid);
     oplogEntry.setObject(BSON("dropIndexes" << nss.coll() << "index" << indexName));
     oplogEntry.setObject2(indexInfo);
-    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     logOperation(opCtx, oplogEntry);
 }
 
@@ -748,7 +740,6 @@ repl::OpTime OpObserverImpl::preRenameCollection(OperationContext* const opCtx,
     oplogEntry.setObject(builder.done());
     if (dropTargetUUID)
         oplogEntry.setObject2(makeObject2ForDropOrRename(numRecords));
-    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     logOperation(opCtx, oplogEntry);
 
     return {};
@@ -785,7 +776,6 @@ void OpObserverImpl::onApplyOps(OperationContext* opCtx,
     oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
     oplogEntry.setNss({dbName, "$cmd"});
     oplogEntry.setObject(applyOpCmd);
-    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     logOperation(opCtx, oplogEntry);
 }
 
@@ -799,7 +789,6 @@ void OpObserverImpl::onEmptyCapped(OperationContext* opCtx,
         oplogEntry.setNss(collectionName.getCommandNS());
         oplogEntry.setUuid(uuid);
         oplogEntry.setObject(BSON("emptycapped" << collectionName.coll()));
-        oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
         logOperation(opCtx, oplogEntry);
     }
 }
