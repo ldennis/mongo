@@ -96,8 +96,7 @@ Date_t getWallClockTimeForOpLog(OperationContext* opCtx) {
 }
 
 repl::OpTime logOperation(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
-    if (!oplogEntry.getWallClockTime())
-        oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
+    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
     auto& times = OpObserver::Times::get(opCtx).reservedOpTimes;
     auto opTime = repl::logOp(opCtx, oplogEntry);
     times.push_back(opTime);
@@ -183,8 +182,6 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     }
 
     OpTimeBundle opTimes;
-    opTimes.wallClockTime = getWallClockTimeForOpLog(opCtx);
-    oplogEntry.setWallClockTime(opTimes.wallClockTime);
 
     if (!storeObj.isEmpty() && opCtx->getTxnNumber()) {
         MutableOplogEntry noopEntry = oplogEntry;
@@ -209,7 +206,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     if (txnParticipant && args.updateArgs.stmtId != kUninitializedStmtId)
         setOplogLink(oplogEntry, oplogLink);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
-
+    opTimes.wallClockTime = oplogEntry.getWallClockTime().get();
     return opTimes;
 }
 
@@ -237,8 +234,6 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     }
 
     OpTimeBundle opTimes;
-    opTimes.wallClockTime = getWallClockTimeForOpLog(opCtx);
-    oplogEntry.setWallClockTime(opTimes.wallClockTime);
 
     if (deletedDoc && opCtx->getTxnNumber()) {
         MutableOplogEntry noopEntry = oplogEntry;
@@ -255,6 +250,7 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     if (txnParticipant && stmtId != kUninitializedStmtId)
         setOplogLink(oplogEntry, oplogLink);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
+    opTimes.wallClockTime = oplogEntry.getWallClockTime().get();
     return opTimes;
 }
 
@@ -865,10 +861,8 @@ OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
 
     try {
         OpTimeBundle times;
-        times.wallClockTime = getWallClockTimeForOpLog(opCtx);
-        oplogEntry.setWallClockTime(times.wallClockTime);
         times.writeOpTime = logOperation(opCtx, oplogEntry);
-
+        times.wallClockTime = oplogEntry.getWallClockTime().get();
         if (updateTxnTable) {
             SessionTxnRecord sessionTxnRecord;
             sessionTxnRecord.setLastWriteOpTime(times.writeOpTime);
@@ -1011,9 +1005,6 @@ void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
     oplogEntry.setPrevWriteOpTimeInTransaction(
         TransactionParticipant::get(opCtx).getLastWriteOpTime());
 
-    const auto wallClockTime = getWallClockTimeForOpLog(opCtx);
-    oplogEntry.setWallClockTime(wallClockTime);
-
     // There should not be a parent WUOW outside of this one. This guarantees the safety of the
     // write conflict retry loop.
     invariant(!opCtx->getWriteUnitOfWork());
@@ -1036,7 +1027,7 @@ void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
 
             SessionTxnRecord sessionTxnRecord;
             sessionTxnRecord.setLastWriteOpTime(oplogOpTime);
-            sessionTxnRecord.setLastWriteDate(wallClockTime);
+            sessionTxnRecord.setLastWriteDate(oplogEntry.getWallClockTime().get());
             sessionTxnRecord.setState(durableState);
             onWriteOpCompleted(opCtx, {}, sessionTxnRecord);
             wuow.commit();
