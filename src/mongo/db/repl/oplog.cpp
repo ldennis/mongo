@@ -408,7 +408,8 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     invariant(wallClockTime);
 
     auto bsonOplogEntry = oplogEntry.toBSON();
-    // The storage engine will assign its own RecordId when we pass one that is null.
+    // The storage engine will assign the RecordId based on the "ts" field of the oplog entry, see
+    // oploghack::extractKey.
     std::vector<Record> records{
         {RecordId(), RecordData(bsonOplogEntry.objdata(), bsonOplogEntry.objsize())}};
     std::vector<Timestamp> timestamps{slot.getTimestamp()};
@@ -477,7 +478,8 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         opTimes[i] = insertStatementOplogSlot;
         timestamps[i] = insertStatementOplogSlot.getTimestamp();
         bsonOplogEntries[i] = oplogEntry.toBSON();
-        // The storage engine will assign its own RecordId when we pass one that is null.
+        // The storage engine will assign the RecordId based on the "ts" field of the oplog entry,
+        // see oploghack::extractKey.
         records[i] = Record{
             RecordId(), RecordData(bsonOplogEntries[i].objdata(), bsonOplogEntries[i].objsize())};
     }

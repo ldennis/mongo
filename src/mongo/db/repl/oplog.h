@@ -96,6 +96,15 @@ void createOplog(OperationContext* opCtx);
 /**
  * Log insert(s) to the local oplog.
  * Returns the OpTime of every insert.
+ * @param oplogEntryTemplate: a template used to generate insert oplog entries. Callers must set the
+ * "ns", "ui", "fromMigrate" and "wall" fields before calling this function. This function will then
+ * augment the template with the "op" (which is set to kInsert), "lsid" and "txnNumber" fields if
+ * necessary.
+ * @param begin/end: first/last InsertStatement to be inserted. This function iterates from begin to
+ * end and generate insert oplog entries based on the augmented oplogEntryTemplate with the "ts",
+ * "t", "o", "prevOpTime" and "stmtId" fields replaced by the content of each InsertStatement
+ * defined by the begin-end range.
+ *
  */
 std::vector<OpTime> logInsertOps(OperationContext* opCtx,
                                  MutableOplogEntry& oplogEntryTemplate,
