@@ -207,10 +207,12 @@ protected:
         oplogEntry.setUuid(uuid);
         oplogEntry.setObject(BSON("TestValue" << 0));
         oplogEntry.setWallClockTime(Date_t::now());
-        oplogEntry.setSessionId(lsid);
-        oplogEntry.setTxnNumber(txnNumber);
-        oplogEntry.setPrevWriteOpTimeInTransaction(prevOpTime);
-        oplogEntry.setStatementIdEnhanced(stmtId);
+        if (stmtId != kUninitializedStmtId) {
+            oplogEntry.setSessionId(lsid);
+            oplogEntry.setTxnNumber(txnNumber);
+            oplogEntry.setStatementId(stmtId);
+            oplogEntry.setPrevWriteOpTimeInTransaction(prevOpTime);
+        }
         return repl::logOp(opCtx, oplogEntry);
     }
 
@@ -592,7 +594,8 @@ TEST_F(TransactionParticipantRetryableWritesTest, ErrorOnlyWhenStmtIdBeingChecke
         oplogEntry.setOpType(repl::OpTypeEnum::kInsert);
         oplogEntry.setObject(BSON("x" << 1));
         oplogEntry.setObject2(TransactionParticipant::kDeadEndSentinel);
-        oplogEntry.setStatementIdEnhanced(1);
+        oplogEntry.setPrevWriteOpTimeInTransaction(repl::OpTime());
+        oplogEntry.setStatementId(1);
 
         AutoGetCollection autoColl(opCtx(), kNss, MODE_IX);
         WriteUnitOfWork wuow(opCtx());
@@ -618,7 +621,7 @@ TEST_F(TransactionParticipantRetryableWritesTest, ErrorOnlyWhenStmtIdBeingChecke
         oplogEntry.setObject({});
         oplogEntry.setObject2(TransactionParticipant::kDeadEndSentinel);
         oplogEntry.setPrevWriteOpTimeInTransaction(firstOpTime);
-        oplogEntry.setStatementIdEnhanced(kIncompleteHistoryStmtId);
+        oplogEntry.setStatementId(kIncompleteHistoryStmtId);
 
         AutoGetCollection autoColl(opCtx(), kNss, MODE_IX);
         WriteUnitOfWork wuow(opCtx());

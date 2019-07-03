@@ -216,6 +216,25 @@ OpTime MutableOplogEntry::getOpTime() const {
     return OpTime(getTimestamp(), term);
 }
 
+BSONObj MutableOplogEntry::toBSONForOplogWrite() const {
+    // We should only set "fromMigrate" if it's true.
+    invariant(getFromMigrate() != false);
+    // We should leave statementId boost::none instead of setting it to kUninitializedStmtId.
+    invariant(getStatementId() != kUninitializedStmtId);
+    if (!getTxnNumber()) {
+        // We should not have these fields if there is no txnNumber.
+        invariant(!getSessionId());
+        invariant(!getStatementId());
+        invariant(!getPrevWriteOpTimeInTransaction());
+        invariant(!getPreImageOpTime());
+        invariant(!getPostImageOpTime());
+    } else {
+        // Otherwise, always log "prevOpTime" field.
+        invariant(getPrevWriteOpTimeInTransaction());
+    }
+    return toBSON();
+}
+
 size_t OplogEntry::getDurableReplOperationSize(const DurableReplOperation& op) {
     return sizeof(op) + op.getNss().size() + op.getObject().objsize() +
         (op.getObject2() ? op.getObject2()->objsize() : 0);

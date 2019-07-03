@@ -174,12 +174,12 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
 
     repl::OplogLink oplogLink;
     const auto txnParticipant = TransactionParticipant::get(opCtx);
-    if (txnParticipant) {
+    if (txnParticipant && args.updateArgs.stmtId != kUninitializedStmtId) {
         oplogEntry.setSessionId(opCtx->getLogicalSessionId());
         oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
         oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
-        oplogEntry.setStatementIdEnhanced(args.updateArgs.stmtId);
+        oplogEntry.setStatementId(args.updateArgs.stmtId);
     }
 
     OpTimeBundle opTimes;
@@ -206,7 +206,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setObject(args.updateArgs.update);
     oplogEntry.setObject2(args.updateArgs.criteria);
     oplogEntry.setFromMigrateIfTrue(args.updateArgs.fromMigrate);
-    if (txnParticipant)
+    if (txnParticipant && args.updateArgs.stmtId != kUninitializedStmtId)
         setOplogLink(oplogEntry, oplogLink);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
 
@@ -228,12 +228,12 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
 
     repl::OplogLink oplogLink;
     const auto txnParticipant = TransactionParticipant::get(opCtx);
-    if (txnParticipant) {
+    if (txnParticipant && stmtId != kUninitializedStmtId) {
         oplogEntry.setSessionId(opCtx->getLogicalSessionId());
         oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
         oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
-        oplogEntry.setStatementIdEnhanced(stmtId);
+        oplogEntry.setStatementId(stmtId);
     }
 
     OpTimeBundle opTimes;
@@ -252,7 +252,7 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     oplogEntry.setOpType(repl::OpTypeEnum::kDelete);
     oplogEntry.setObject(documentKeyDecoration(opCtx));
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
-    if (txnParticipant)
+    if (txnParticipant && stmtId != kUninitializedStmtId)
         setOplogLink(oplogEntry, oplogLink);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
     return opTimes;
@@ -1069,7 +1069,7 @@ void OpObserverImpl::onUnpreparedTransactionCommit(
         invariant(lastWriteOpTime.isNull());
         MutableOplogEntry oplogEntry;
         oplogEntry.setPrevWriteOpTimeInTransaction(lastWriteOpTime);
-        oplogEntry.setStatementIdEnhanced(StmtId(0));
+        oplogEntry.setStatementId(StmtId(0));
 
         BSONObjBuilder applyOpsBuilder;
         // TODO(SERVER-41470): Remove limitSize==false once old transaction format is no longer

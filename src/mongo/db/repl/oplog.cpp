@@ -372,7 +372,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
         uassert(ErrorCodes::IllegalOperation,
                 str::stream() << "retryable writes is not supported for unreplicated ns: "
                               << oplogEntry.getNss().ns(),
-                oplogEntry.getStatementId().value_or(kUninitializedStmtId) == kUninitializedStmtId);
+                !oplogEntry.getStatementId());
         return {};
     }
 
@@ -407,7 +407,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     auto wallClockTime = oplogEntry.getWallClockTime();
     invariant(wallClockTime);
 
-    auto bsonOplogEntry = oplogEntry.toBSON();
+    auto bsonOplogEntry = oplogEntry.toBSONForOplogWrite();
     // The storage engine will assign the RecordId based on the "ts" field of the oplog entry, see
     // oploghack::extractKey.
     std::vector<Record> records{
@@ -449,10 +449,6 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
     WriteUnitOfWork wuow(opCtx);
 
     const auto txnParticipant = TransactionParticipant::get(opCtx);
-    if (txnParticipant) {
-        oplogEntryTemplate.setSessionId(*opCtx->getLogicalSessionId());
-        oplogEntryTemplate.setTxnNumber(*opCtx->getTxnNumber());
-    }
 
     std::vector<OpTime> opTimes(count);
     std::vector<Timestamp> timestamps(count);
@@ -469,15 +465,18 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         }
         oplogEntry.setObject(begin[i].doc);
         oplogEntry.setOpTime(insertStatementOplogSlot);
-        if (txnParticipant) {
+
+        if (txnParticipant && begin[i].stmtId != kUninitializedStmtId) {
+            oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
+            oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
+            oplogEntry.setStatementId(begin[i].stmtId);
             oplogEntry.setPrevWriteOpTimeInTransaction(i == 0 ? txnParticipant.getLastWriteOpTime()
                                                               : opTimes[i - 1]);
-            oplogEntry.setStatementIdEnhanced(begin[i].stmtId);
         }
 
         opTimes[i] = insertStatementOplogSlot;
         timestamps[i] = insertStatementOplogSlot.getTimestamp();
-        bsonOplogEntries[i] = oplogEntry.toBSON();
+        bsonOplogEntries[i] = oplogEntry.toBSONForOplogWrite();
         // The storage engine will assign the RecordId based on the "ts" field of the oplog entry,
         // see oploghack::extractKey.
         records[i] = Record{

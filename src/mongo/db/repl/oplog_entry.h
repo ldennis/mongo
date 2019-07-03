@@ -140,14 +140,10 @@ public:
     }
 
     /**
-     * Same as setStatementId but also set prevOpTime to default OpTime if the given statementId is
-     * valid and prevOpTime is not already initialized.
+     * Same as toBSON() but this does extra validations to make sure we do not log unnecessary
+     * fields.
      */
-    void setStatementIdEnhanced(boost::optional<std::int32_t> value) & {
-        if (value && *value != kUninitializedStmtId && !getPrevWriteOpTimeInTransaction())
-            setPrevWriteOpTimeInTransaction(OpTime());
-        setStatementId(value);
-    }
+    BSONObj toBSONForOplogWrite() const;
 };
 
 /**
