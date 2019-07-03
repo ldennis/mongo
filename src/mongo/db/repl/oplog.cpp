@@ -418,17 +418,18 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
 }
 
 std::vector<OpTime> logInsertOps(OperationContext* opCtx,
-                                 MutableOplogEntry& oplogEntry,
+                                 MutableOplogEntry& oplogEntryTemplate,
                                  std::vector<InsertStatement>::const_iterator begin,
                                  std::vector<InsertStatement>::const_iterator end) {
     invariant(begin != end);
-    oplogEntry.setOpType(repl::OpTypeEnum::kInsert);
+    oplogEntryTemplate.setOpType(repl::OpTypeEnum::kInsert);
 
+    auto nss = oplogEntryTemplate.getNss();
     auto replCoord = ReplicationCoordinator::get(opCtx);
-    if (replCoord->isOplogDisabledFor(opCtx, oplogEntry.getNss())) {
+    if (replCoord->isOplogDisabledFor(opCtx, nss)) {
         uassert(ErrorCodes::IllegalOperation,
                 str::stream() << "retryable writes is not supported for unreplicated ns: "
-                              << oplogEntry.getNss().ns(),
+                              << nss.ns(),
                 begin->stmtId == kUninitializedStmtId);
         return {};
     }
@@ -448,15 +449,16 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
 
     const auto txnParticipant = TransactionParticipant::get(opCtx);
     if (txnParticipant) {
-        oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
-        oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
-        oplogEntry.setPrevWriteOpTimeInTransaction(txnParticipant.getLastWriteOpTime());
+        oplogEntryTemplate.setSessionId(*opCtx->getLogicalSessionId());
+        oplogEntryTemplate.setTxnNumber(*opCtx->getTxnNumber());
     }
 
-    std::vector<Timestamp> timestamps;
-    std::vector<OpTime> opTimes;
-    std::vector<BSONObj> oplogToInsert;
+    std::vector<OpTime> opTimes(count);
+    std::vector<Timestamp> timestamps(count);
+    std::vector<BSONObj> bsonOplogEntries(count);
     for (size_t i = 0; i < count; i++) {
+        // Make a copy from the template for each insert oplog entry.
+        MutableOplogEntry oplogEntry = oplogEntryTemplate;
         // Make a mutable copy.
         auto insertStatementOplogSlot = begin[i].oplogSlot;
         // Fetch optime now, if not already fetched.
@@ -465,14 +467,16 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         }
         oplogEntry.setObject(begin[i].doc);
         oplogEntry.setOpTime(insertStatementOplogSlot);
-        oplogEntry.setStatementIdEnhanced(begin[i].stmtId);
+        if (txnParticipant) {
+            oplogEntry.setPrevWriteOpTimeInTransaction(i == 0 ? txnParticipant.getLastWriteOpTime()
+                                                              : opTimes[i - 1]);
+            oplogEntry.setStatementIdEnhanced(begin[i].stmtId);
+        }
 
-        oplogToInsert.emplace_back(oplogEntry.toBSON());
-        timestamps.emplace_back(insertStatementOplogSlot.getTimestamp());
+        bsonOplogEntries[i] = oplogEntry.toBSON();
+        timestamps[i] = insertStatementOplogSlot.getTimestamp();
 
-        if (txnParticipant)
-            oplogEntry.setPrevWriteOpTimeInTransaction(insertStatementOplogSlot);
-        opTimes.push_back(insertStatementOplogSlot);
+        opTimes[i] = insertStatementOplogSlot;
     }
 
     MONGO_FAIL_POINT_BLOCK(sleepBetweenInsertOpTimeGenerationAndLogOp, customWait) {
@@ -483,22 +487,20 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         sleepmillis(numMillis);
     }
 
-    std::vector<Record> records;
-    for (auto& doc : oplogToInsert) {
-        // Pass the serialized oplog BSONObj buffer directly to record store to avoid copying.
-        records.emplace_back(Record{RecordId(),  // The storage engine will assign its own RecordId
-                                                 // when we pass one that is null.
-                                    RecordData(doc.objdata(), doc.objsize())});
+    std::vector<Record> records(count);
+    for (size_t i = 0; i < count; i++) {
+        const auto& doc = bsonOplogEntries[i];
+        // The storage engine will assign its own RecordId when we pass one that is null.
+        records[i] = Record{RecordId(), RecordData(doc.objdata(), doc.objsize())};
     }
 
     invariant(!opTimes.empty());
     auto lastOpTime = opTimes.back();
     invariant(!lastOpTime.isNull());
     auto oplog = oplogInfo->getCollection();
-    auto wallClockTime = oplogEntry.getWallClockTime();
+    auto wallClockTime = oplogEntryTemplate.getWallClockTime();
     invariant(wallClockTime);
-    _logOpsInner(
-        opCtx, oplogEntry.getNss(), &records, timestamps, oplog, lastOpTime, *wallClockTime);
+    _logOpsInner(opCtx, nss, &records, timestamps, oplog, lastOpTime, *wallClockTime);
     wuow.commit();
     return opTimes;
 }

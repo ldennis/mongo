@@ -98,7 +98,7 @@ void createOplog(OperationContext* opCtx);
  * Returns the OpTime of every insert.
  */
 std::vector<OpTime> logInsertOps(OperationContext* opCtx,
-                                 MutableOplogEntry& oplogEntry,
+                                 MutableOplogEntry& oplogEntryTemplate,
                                  std::vector<InsertStatement>::const_iterator begin,
                                  std::vector<InsertStatement>::const_iterator end);
 
