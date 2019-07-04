@@ -79,6 +79,11 @@ struct OplogLink {
     OpTime postImageOpTime;
 };
 
+void appendRetryableWriteInfo(OperationContext* opCtx,
+                              MutableOplogEntry& oplogEntry,
+                              StmtId stmtId,
+                              OplogLink& oplogLink);
+
 /**
  * Create a new capped collection for the oplog if it doesn't yet exist.
  * If the collection already exists (and isReplSet is false),

@@ -407,7 +407,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     auto wallClockTime = oplogEntry.getWallClockTime();
     invariant(wallClockTime);
 
-    auto bsonOplogEntry = oplogEntry.toBSONForOplogWrite();
+    auto bsonOplogEntry = oplogEntry.toBSON();
     // The storage engine will assign the RecordId based on the "ts" field of the oplog entry, see
     // oploghack::extractKey.
     std::vector<Record> records{
@@ -448,8 +448,6 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
 
     WriteUnitOfWork wuow(opCtx);
 
-    const auto txnParticipant = TransactionParticipant::get(opCtx);
-
     std::vector<OpTime> opTimes(count);
     std::vector<Timestamp> timestamps(count);
     std::vector<BSONObj> bsonOplogEntries(count);
@@ -466,17 +464,14 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         oplogEntry.setObject(begin[i].doc);
         oplogEntry.setOpTime(insertStatementOplogSlot);
 
-        if (txnParticipant && begin[i].stmtId != kUninitializedStmtId) {
-            oplogEntry.setSessionId(*opCtx->getLogicalSessionId());
-            oplogEntry.setTxnNumber(*opCtx->getTxnNumber());
-            oplogEntry.setStatementId(begin[i].stmtId);
-            oplogEntry.setPrevWriteOpTimeInTransaction(i == 0 ? txnParticipant.getLastWriteOpTime()
-                                                              : opTimes[i - 1]);
-        }
+        OplogLink oplogLink;
+        if (i > 0)
+            oplogLink.prevOpTime = opTimes[i - 1];
+        appendRetryableWriteInfo(opCtx, oplogEntry, begin[i].stmtId, oplogLink);
 
         opTimes[i] = insertStatementOplogSlot;
         timestamps[i] = insertStatementOplogSlot.getTimestamp();
-        bsonOplogEntries[i] = oplogEntry.toBSONForOplogWrite();
+        bsonOplogEntries[i] = oplogEntry.toBSON();
         // The storage engine will assign the RecordId based on the "ts" field of the oplog entry,
         // see oploghack::extractKey.
         records[i] = Record{
@@ -500,6 +495,28 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
     _logOpsInner(opCtx, nss, &records, timestamps, oplog, lastOpTime, *wallClockTime);
     wuow.commit();
     return opTimes;
+}
+
+void appendRetryableWriteInfo(OperationContext* opCtx,
+                              MutableOplogEntry& oplogEntry,
+                              StmtId stmtId,
+                              OplogLink& oplogLink) {
+    const auto txnParticipant = TransactionParticipant::get(opCtx);
+    if (txnParticipant && stmtId != kUninitializedStmtId) {
+        oplogEntry.setSessionId(opCtx->getLogicalSessionId());
+        oplogEntry.setTxnNumber(opCtx->getTxnNumber());
+        oplogEntry.setStatementId(stmtId);
+        if (oplogLink.prevOpTime.isNull()) {
+            oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
+        }
+        oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
+        if (!oplogLink.preImageOpTime.isNull()) {
+            oplogEntry.setPreImageOpTime(oplogLink.preImageOpTime);
+        }
+        if (!oplogLink.postImageOpTime.isNull()) {
+            oplogEntry.setPostImageOpTime(oplogLink.postImageOpTime);
+        }
+    }
 }
 
 namespace {

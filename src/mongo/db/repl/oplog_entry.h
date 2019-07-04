@@ -138,12 +138,6 @@ public:
         if (value)
             setFromMigrate(value);
     }
-
-    /**
-     * Same as toBSON() but this does extra validations to make sure we do not log unnecessary
-     * fields.
-     */
-    BSONObj toBSONForOplogWrite() const;
 };
 
 /**
