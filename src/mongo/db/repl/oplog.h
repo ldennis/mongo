@@ -79,6 +79,17 @@ struct OplogLink {
     OpTime postImageOpTime;
 };
 
+/**
+ * Set the "lsid", "txnNumber", "stmtId", "prevOpTime", "preImageOpTime" and "postImageOpTime"
+ * fields of the oplogEntry based on the given oplogLink for retryable writes (i.e. when there exits
+ * a TransactionParticipant under the given opCtx and stmtId != kUninitializedStmtId).
+ *
+ * If the given oplogLink.prevOpTime is a null OpTime, both the oplogLink.prevOpTime and the
+ * "prevOpTime" field of the oplogEntry will be set to the TransactionParticipant's lastWriteOpTime.
+ * The "preImageOpTime" field will only be set if the given oplogLink.preImageOpTime is not null.
+ * Similarly, the "postImageOpTime" field will only be set if the given oplogLink.postImageOpTime is
+ * not null.
+ */
 void appendRetryableWriteInfo(OperationContext* opCtx,
                               MutableOplogEntry& oplogEntry,
                               StmtId stmtId,
