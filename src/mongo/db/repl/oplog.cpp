@@ -501,8 +501,9 @@ void appendRetryableWriteInfo(OperationContext* opCtx,
                               MutableOplogEntry& oplogEntry,
                               StmtId stmtId,
                               OplogLink& oplogLink) {
-    const auto txnParticipant = TransactionParticipant::get(opCtx);
-    if (txnParticipant && stmtId != kUninitializedStmtId) {
+    if (stmtId != kUninitializedStmtId) {
+        const auto txnParticipant = TransactionParticipant::get(opCtx);
+        invariant(txnParticipant);
         oplogEntry.setSessionId(opCtx->getLogicalSessionId());
         oplogEntry.setTxnNumber(opCtx->getTxnNumber());
         oplogEntry.setStatementId(stmtId);
