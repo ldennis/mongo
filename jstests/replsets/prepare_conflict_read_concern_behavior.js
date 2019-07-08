@@ -10,11 +10,11 @@
  * it is safe for the two commands to ignore prepare conflicts for reads. This test also makes sure
  * mapReduce that does writes is not allowed to run on secondaries.
  *
- * Also test that validate, which acquires collection X lock during its execution, do not block on a
- * prepared transaction on secondaries. Otherwise, it would cause deadlocks when the prepared
+ * Also test that validate, which acquires collection X lock during its execution, does not block on
+ * a prepared transaction on secondaries. Otherwise, it would cause deadlocks when the prepared
  * transaction reacquires locks (since locks were yielded on secondaries) at commit time. This test
  * makes sure the validate command does not accept a non local read concern or afterClusterTime and
- * so it is safe for it to ignore prepare conflicts during its execution.
+ * that it is therefore safe to ignore prepare conflicts during its execution.
  *
  * @tags: [uses_transactions, uses_prepare_transaction]
  */
