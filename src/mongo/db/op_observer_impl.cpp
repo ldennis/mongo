@@ -172,7 +172,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setUuid(args.uuid);
 
     repl::OplogLink oplogLink;
-    repl::appendRetryableWriteInfo(opCtx, oplogEntry, args.updateArgs.stmtId, oplogLink);
+    repl::appendRetryableWriteInfo(opCtx, &oplogEntry, &oplogLink, args.updateArgs.stmtId);
 
     OpTimeBundle opTimes;
 
@@ -197,7 +197,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setObject2(args.updateArgs.criteria);
     oplogEntry.setFromMigrateIfTrue(args.updateArgs.fromMigrate);
     // oplogLink could have been changed to include pre/postImageOpTime by the previous no-op write.
-    repl::appendRetryableWriteInfo(opCtx, oplogEntry, args.updateArgs.stmtId, oplogLink);
+    repl::appendRetryableWriteInfo(opCtx, &oplogEntry, &oplogLink, args.updateArgs.stmtId);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
     opTimes.wallClockTime = oplogEntry.getWallClockTime().get();
     return opTimes;
@@ -217,7 +217,7 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     oplogEntry.setUuid(uuid);
 
     repl::OplogLink oplogLink;
-    repl::appendRetryableWriteInfo(opCtx, oplogEntry, stmtId, oplogLink);
+    repl::appendRetryableWriteInfo(opCtx, &oplogEntry, &oplogLink, stmtId);
 
     OpTimeBundle opTimes;
 
@@ -234,7 +234,7 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     oplogEntry.setObject(documentKeyDecoration(opCtx));
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
     // oplogLink could have been changed to include preImageOpTime by the previous no-op write.
-    repl::appendRetryableWriteInfo(opCtx, oplogEntry, stmtId, oplogLink);
+    repl::appendRetryableWriteInfo(opCtx, &oplogEntry, &oplogLink, stmtId);
     opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
     opTimes.wallClockTime = oplogEntry.getWallClockTime().get();
     return opTimes;

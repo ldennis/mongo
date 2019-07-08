@@ -91,9 +91,9 @@ struct OplogLink {
  * not null.
  */
 void appendRetryableWriteInfo(OperationContext* opCtx,
-                              MutableOplogEntry& oplogEntry,
-                              StmtId stmtId,
-                              OplogLink& oplogLink);
+                              MutableOplogEntry* oplogEntry,
+                              OplogLink* oplogLink,
+                              StmtId stmtId);
 
 /**
  * Create a new capped collection for the oplog if it doesn't yet exist.

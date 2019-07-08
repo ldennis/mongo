@@ -467,7 +467,7 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
         OplogLink oplogLink;
         if (i > 0)
             oplogLink.prevOpTime = opTimes[i - 1];
-        appendRetryableWriteInfo(opCtx, oplogEntry, begin[i].stmtId, oplogLink);
+        appendRetryableWriteInfo(opCtx, &oplogEntry, &oplogLink, begin[i].stmtId);
 
         opTimes[i] = insertStatementOplogSlot;
         timestamps[i] = insertStatementOplogSlot.getTimestamp();
@@ -498,25 +498,27 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
 }
 
 void appendRetryableWriteInfo(OperationContext* opCtx,
-                              MutableOplogEntry& oplogEntry,
-                              StmtId stmtId,
-                              OplogLink& oplogLink) {
-    if (stmtId != kUninitializedStmtId) {
-        const auto txnParticipant = TransactionParticipant::get(opCtx);
-        invariant(txnParticipant);
-        oplogEntry.setSessionId(opCtx->getLogicalSessionId());
-        oplogEntry.setTxnNumber(opCtx->getTxnNumber());
-        oplogEntry.setStatementId(stmtId);
-        if (oplogLink.prevOpTime.isNull()) {
-            oplogLink.prevOpTime = txnParticipant.getLastWriteOpTime();
-        }
-        oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
-        if (!oplogLink.preImageOpTime.isNull()) {
-            oplogEntry.setPreImageOpTime(oplogLink.preImageOpTime);
-        }
-        if (!oplogLink.postImageOpTime.isNull()) {
-            oplogEntry.setPostImageOpTime(oplogLink.postImageOpTime);
-        }
+                              MutableOplogEntry* oplogEntry,
+                              OplogLink* oplogLink,
+                              StmtId stmtId) {
+    // Not a retryable write.
+    if (stmtId == kUninitializedStmtId)
+        return;
+
+    const auto txnParticipant = TransactionParticipant::get(opCtx);
+    invariant(txnParticipant);
+    oplogEntry->setSessionId(opCtx->getLogicalSessionId());
+    oplogEntry->setTxnNumber(opCtx->getTxnNumber());
+    oplogEntry->setStatementId(stmtId);
+    if (oplogLink->prevOpTime.isNull()) {
+        oplogLink->prevOpTime = txnParticipant.getLastWriteOpTime();
+    }
+    oplogEntry->setPrevWriteOpTimeInTransaction(oplogLink->prevOpTime);
+    if (!oplogLink->preImageOpTime.isNull()) {
+        oplogEntry->setPreImageOpTime(oplogLink->preImageOpTime);
+    }
+    if (!oplogLink->postImageOpTime.isNull()) {
+        oplogEntry->setPostImageOpTime(oplogLink->postImageOpTime);
     }
 }
 
