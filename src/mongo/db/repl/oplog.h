@@ -123,7 +123,7 @@ void createOplog(OperationContext* opCtx);
  *
  */
 std::vector<OpTime> logInsertOps(OperationContext* opCtx,
-                                 MutableOplogEntry& oplogEntryTemplate,
+                                 MutableOplogEntry* oplogEntryTemplate,
                                  std::vector<InsertStatement>::const_iterator begin,
                                  std::vector<InsertStatement>::const_iterator end);
 
@@ -131,7 +131,7 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
  * Returns the optime of the oplog entry written to the oplog.
  * Returns a null optime if oplog was not modified.
  */
-OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry);
+OpTime logOp(OperationContext* opCtx, MutableOplogEntry* oplogEntry);
 
 // Flush out the cached pointer to the oplog.
 void clearLocalOplogPtr();

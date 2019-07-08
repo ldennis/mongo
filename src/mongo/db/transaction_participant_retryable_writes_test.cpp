@@ -213,7 +213,7 @@ protected:
             oplogEntry.setStatementId(stmtId);
             oplogEntry.setPrevWriteOpTimeInTransaction(prevOpTime);
         }
-        return repl::logOp(opCtx, oplogEntry);
+        return repl::logOp(opCtx, &oplogEntry);
     }
 
     repl::OpTime writeTxnRecord(TxnNumber txnNum,
@@ -603,7 +603,7 @@ TEST_F(TransactionParticipantRetryableWritesTest, ErrorOnlyWhenStmtIdBeingChecke
         const auto wallClockTime = Date_t::now();
         oplogEntry.setWallClockTime(wallClockTime);
 
-        auto opTime = repl::logOp(opCtx(), oplogEntry);
+        auto opTime = repl::logOp(opCtx(), &oplogEntry);
 
         SessionTxnRecord sessionTxnRecord;
         sessionTxnRecord.setSessionId(sessionId);
@@ -629,7 +629,7 @@ TEST_F(TransactionParticipantRetryableWritesTest, ErrorOnlyWhenStmtIdBeingChecke
         const auto wallClockTime = Date_t::now();
         oplogEntry.setWallClockTime(wallClockTime);
 
-        auto opTime = repl::logOp(opCtx(), oplogEntry);
+        auto opTime = repl::logOp(opCtx(), &oplogEntry);
 
         SessionTxnRecord sessionTxnRecord;
         sessionTxnRecord.setSessionId(sessionId);

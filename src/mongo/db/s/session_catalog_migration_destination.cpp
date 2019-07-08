@@ -85,42 +85,42 @@ BSONObj buildMigrateSessionCmd(const MigrationSessionId& migrationSessionId) {
  *
  * It is an error to have both preImage and postImage as well as not having them at all.
  */
-void setPrePostImageTs(const ProcessOplogResult& lastResult, repl::MutableOplogEntry& entry) {
+void setPrePostImageTs(const ProcessOplogResult& lastResult, repl::MutableOplogEntry* entry) {
     if (!lastResult.isPrePostImage) {
         uassert(40628,
-                str::stream() << "expected oplog with ts: " << entry.getTimestamp().toString()
+                str::stream() << "expected oplog with ts: " << entry->getTimestamp().toString()
                               << " to not have "
                               << repl::OplogEntryBase::kPreImageOpTimeFieldName
                               << " or "
                               << repl::OplogEntryBase::kPostImageOpTimeFieldName,
-                !entry.getPreImageOpTime() && !entry.getPostImageOpTime());
+                !entry->getPreImageOpTime() && !entry->getPostImageOpTime());
         return;
     }
 
     invariant(!lastResult.oplogTime.isNull());
 
     uassert(40629,
-            str::stream() << "expected oplog with ts: " << entry.getTimestamp().toString() << ": "
-                          << redact(entry.toBSON())
+            str::stream() << "expected oplog with ts: " << entry->getTimestamp().toString() << ": "
+                          << redact(entry->toBSON())
                           << " to have session: "
                           << lastResult.sessionId,
-            lastResult.sessionId == *entry.getSessionId());
+            lastResult.sessionId == entry->getSessionId());
     uassert(40630,
-            str::stream() << "expected oplog with ts: " << entry.getTimestamp().toString() << ": "
-                          << redact(entry.toBSON())
+            str::stream() << "expected oplog with ts: " << entry->getTimestamp().toString() << ": "
+                          << redact(entry->toBSON())
                           << " to have txnNumber: "
                           << lastResult.txnNum,
-            lastResult.txnNum == *entry.getTxnNumber());
+            lastResult.txnNum == entry->getTxnNumber());
 
-    if (entry.getPreImageOpTime()) {
-        entry.setPreImageOpTime(lastResult.oplogTime);
-    } else if (entry.getPostImageOpTime()) {
-        entry.setPostImageOpTime(lastResult.oplogTime);
+    if (entry->getPreImageOpTime()) {
+        entry->setPreImageOpTime(lastResult.oplogTime);
+    } else if (entry->getPostImageOpTime()) {
+        entry->setPostImageOpTime(lastResult.oplogTime);
     } else {
         uasserted(40631,
-                  str::stream() << "expected oplog with opTime: " << entry.getOpTime().toString()
+                  str::stream() << "expected oplog with opTime: " << entry->getOpTime().toString()
                                 << ": "
-                                << redact(entry.toBSON())
+                                << redact(entry->toBSON())
                                 << " to have either "
                                 << repl::OplogEntryBase::kPreImageOpTimeFieldName
                                 << " or "
@@ -268,7 +268,7 @@ ProcessOplogResult processSessionOplog(const BSONObj& oplogBSON,
     if (!result.isPrePostImage)
         oplogEntry.setObject(
             BSON(SessionCatalogMigrationDestination::kSessionMigrateOplogTag << 1));
-    setPrePostImageTs(lastResult, oplogEntry);
+    setPrePostImageTs(lastResult, &oplogEntry);
     oplogEntry.setPrevWriteOpTimeInTransaction(txnParticipant.getLastWriteOpTime());
 
     oplogEntry.setOpType(repl::OpTypeEnum::kNoop);
@@ -290,7 +290,7 @@ ProcessOplogResult processSessionOplog(const BSONObj& oplogBSON,
                 opCtx, NamespaceString::kSessionTransactionsTableNamespace.db(), MODE_IX);
             WriteUnitOfWork wunit(opCtx);
 
-            result.oplogTime = repl::logOp(opCtx, oplogEntry);
+            result.oplogTime = repl::logOp(opCtx, &oplogEntry);
 
             const auto& oplogOpTime = result.oplogTime;
             uassert(40633,

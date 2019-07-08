@@ -478,7 +478,7 @@ private:
                 oplogEntry.setWallClockTime(clockSource->now());
 
                 WriteUnitOfWork uow(opCtx);
-                repl::OpTime result = repl::logOp(opCtx, oplogEntry);
+                repl::OpTime result = repl::logOp(opCtx, &oplogEntry);
                 uow.commit();
                 return result;
             });

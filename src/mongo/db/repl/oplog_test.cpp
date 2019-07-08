@@ -106,7 +106,7 @@ TEST_F(OplogTest, LogOpReturnsOpTimeOnSuccessfulInsertIntoOplogCollection) {
         oplogEntry.setWallClockTime(Date_t::now());
         AutoGetDb autoDb(opCtx.get(), nss.db(), MODE_X);
         WriteUnitOfWork wunit(opCtx.get());
-        opTime = logOp(opCtx.get(), oplogEntry);
+        opTime = logOp(opCtx.get(), &oplogEntry);
         ASSERT_FALSE(opTime.isNull());
         wunit.commit();
     }
@@ -222,7 +222,7 @@ OpTime _logOpNoopWithMsg(OperationContext* opCtx,
     oplogEntry.setNss(nss);
     oplogEntry.setObject(BSON("msg" << nss.ns()));
     oplogEntry.setWallClockTime(Date_t::now());
-    auto opTime = logOp(opCtx, oplogEntry);
+    auto opTime = logOp(opCtx, &oplogEntry);
     ASSERT_FALSE(opTime.isNull());
 
     ASSERT(opTimeNssMap->find(opTime) == opTimeNssMap->end())

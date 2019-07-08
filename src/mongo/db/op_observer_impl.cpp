@@ -83,8 +83,8 @@ Date_t getWallClockTimeForOpLog(OperationContext* opCtx) {
     return clockSource->now();
 }
 
-repl::OpTime logOperation(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
-    oplogEntry.setWallClockTime(getWallClockTimeForOpLog(opCtx));
+repl::OpTime logOperation(OperationContext* opCtx, MutableOplogEntry* oplogEntry) {
+    oplogEntry->setWallClockTime(getWallClockTimeForOpLog(opCtx));
     auto& times = OpObserver::Times::get(opCtx).reservedOpTimes;
     auto opTime = repl::logOp(opCtx, oplogEntry);
     times.push_back(opTime);
@@ -168,7 +168,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
         MutableOplogEntry noopEntry = oplogEntry;
         noopEntry.setOpType(repl::OpTypeEnum::kNoop);
         noopEntry.setObject(std::move(storeObj));
-        auto noteUpdateOpTime = logOperation(opCtx, noopEntry);
+        auto noteUpdateOpTime = logOperation(opCtx, &noopEntry);
 
         opTimes.prePostImageOpTime = noteUpdateOpTime;
 
@@ -186,7 +186,7 @@ OpTimeBundle replLogUpdate(OperationContext* opCtx, const OplogUpdateEntryArgs& 
     oplogEntry.setFromMigrateIfTrue(args.updateArgs.fromMigrate);
     // oplogLink could have been changed to include pre/postImageOpTime by the previous no-op write.
     repl::appendRetryableWriteInfo(opCtx, &oplogEntry, &oplogLink, args.updateArgs.stmtId);
-    opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
+    opTimes.writeOpTime = logOperation(opCtx, &oplogEntry);
     opTimes.wallClockTime = oplogEntry.getWallClockTime().get();
     return opTimes;
 }
@@ -213,7 +213,7 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
         MutableOplogEntry noopEntry = oplogEntry;
         noopEntry.setOpType(repl::OpTypeEnum::kNoop);
         noopEntry.setObject(deletedDoc.get());
-        auto noteOplog = logOperation(opCtx, noopEntry);
+        auto noteOplog = logOperation(opCtx, &noopEntry);
         opTimes.prePostImageOpTime = noteOplog;
         oplogLink.preImageOpTime = noteOplog;
     }
@@ -223,7 +223,7 @@ OpTimeBundle replLogDelete(OperationContext* opCtx,
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
     // oplogLink could have been changed to include preImageOpTime by the previous no-op write.
     repl::appendRetryableWriteInfo(opCtx, &oplogEntry, &oplogLink, stmtId);
-    opTimes.writeOpTime = logOperation(opCtx, oplogEntry);
+    opTimes.writeOpTime = logOperation(opCtx, &oplogEntry);
     opTimes.wallClockTime = oplogEntry.getWallClockTime().get();
     return opTimes;
 }
@@ -256,7 +256,7 @@ void OpObserverImpl::onCreateIndex(OperationContext* opCtx,
     oplogEntry.setUuid(uuid);
     oplogEntry.setObject(builder.done());
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
-    logOperation(opCtx, oplogEntry);
+    logOperation(opCtx, &oplogEntry);
 }
 
 void OpObserverImpl::onStartIndexBuild(OperationContext* opCtx,
@@ -287,7 +287,7 @@ void OpObserverImpl::onStartIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
-    logOperation(opCtx, oplogEntry);
+    logOperation(opCtx, &oplogEntry);
 }
 
 void OpObserverImpl::onCommitIndexBuild(OperationContext* opCtx,
@@ -318,7 +318,7 @@ void OpObserverImpl::onCommitIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
-    logOperation(opCtx, oplogEntry);
+    logOperation(opCtx, &oplogEntry);
 }
 
 void OpObserverImpl::onAbortIndexBuild(OperationContext* opCtx,
@@ -349,7 +349,7 @@ void OpObserverImpl::onAbortIndexBuild(OperationContext* opCtx,
     oplogEntry.setUuid(collUUID);
     oplogEntry.setObject(oplogEntryBuilder.done());
     oplogEntry.setFromMigrateIfTrue(fromMigrate);
-    logOperation(opCtx, oplogEntry);
+    logOperation(opCtx, &oplogEntry);
 }
 
 void OpObserverImpl::onInserts(OperationContext* opCtx,
@@ -386,7 +386,7 @@ void OpObserverImpl::onInserts(OperationContext* opCtx,
         lastWriteDate = getWallClockTimeForOpLog(opCtx);
         oplogEntryTemplate.setWallClockTime(lastWriteDate);
 
-        opTimeList = repl::logInsertOps(opCtx, oplogEntryTemplate, first, last);
+        opTimeList = repl::logInsertOps(opCtx, &oplogEntryTemplate, first, last);
         if (!opTimeList.empty())
             lastOpTime = opTimeList.back();
 
@@ -565,7 +565,7 @@ void OpObserverImpl::onInternalOpMessage(OperationContext* opCtx,
     oplogEntry.setUuid(uuid);
     oplogEntry.setObject(msgObj);
     oplogEntry.setObject2(o2MsgObj);
-    logOperation(opCtx, oplogEntry);
+    logOperation(opCtx, &oplogEntry);
 }
 
 void OpObserverImpl::onCreateCollection(OperationContext* opCtx,
@@ -582,7 +582,7 @@ void OpObserverImpl::onCreateCollection(OperationContext* opCtx,
         oplogEntry.setUuid(options.uuid);
         oplogEntry.setObject(makeCreateCollCmdObj(collectionName, options, idIndex));
         oplogEntry.setOpTime(createOpTime);
-        logOperation(opCtx, oplogEntry);
+        logOperation(opCtx, &oplogEntry);
     }
 }
 
@@ -610,7 +610,7 @@ void OpObserverImpl::onCollMod(OperationContext* opCtx,
         oplogEntry.setUuid(uuid);
         oplogEntry.setObject(makeCollModCmdObj(collModCmd, oldCollOptions, ttlInfo));
         oplogEntry.setObject2(o2Builder.done());
-        logOperation(opCtx, oplogEntry);
+        logOperation(opCtx, &oplogEntry);
     }
 
     // Make sure the UUID values in the Collection metadata, the Collection object, and the UUID
@@ -634,7 +634,7 @@ void OpObserverImpl::onDropDatabase(OperationContext* opCtx, const std::string& 
     oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
     oplogEntry.setNss({dbName, "$cmd"});
     oplogEntry.setObject(BSON("dropDatabase" << 1));
-    logOperation(opCtx, oplogEntry);
+    logOperation(opCtx, &oplogEntry);
 
     uassert(
         50714, "dropping the admin database is not allowed.", dbName != NamespaceString::kAdminDb);
@@ -657,7 +657,7 @@ repl::OpTime OpObserverImpl::onDropCollection(OperationContext* opCtx,
         oplogEntry.setUuid(uuid);
         oplogEntry.setObject(BSON("drop" << collectionName.coll()));
         oplogEntry.setObject2(makeObject2ForDropOrRename(numRecords));
-        logOperation(opCtx, oplogEntry);
+        logOperation(opCtx, &oplogEntry);
     }
 
     uassert(50715,
@@ -684,7 +684,7 @@ void OpObserverImpl::onDropIndex(OperationContext* opCtx,
     oplogEntry.setUuid(uuid);
     oplogEntry.setObject(BSON("dropIndexes" << nss.coll() << "index" << indexName));
     oplogEntry.setObject2(indexInfo);
-    logOperation(opCtx, oplogEntry);
+    logOperation(opCtx, &oplogEntry);
 }
 
 
@@ -710,7 +710,7 @@ repl::OpTime OpObserverImpl::preRenameCollection(OperationContext* const opCtx,
     oplogEntry.setObject(builder.done());
     if (dropTargetUUID)
         oplogEntry.setObject2(makeObject2ForDropOrRename(numRecords));
-    logOperation(opCtx, oplogEntry);
+    logOperation(opCtx, &oplogEntry);
 
     return {};
 }
@@ -746,7 +746,7 @@ void OpObserverImpl::onApplyOps(OperationContext* opCtx,
     oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
     oplogEntry.setNss({dbName, "$cmd"});
     oplogEntry.setObject(applyOpCmd);
-    logOperation(opCtx, oplogEntry);
+    logOperation(opCtx, &oplogEntry);
 }
 
 void OpObserverImpl::onEmptyCapped(OperationContext* opCtx,
@@ -759,7 +759,7 @@ void OpObserverImpl::onEmptyCapped(OperationContext* opCtx,
         oplogEntry.setNss(collectionName.getCommandNS());
         oplogEntry.setUuid(uuid);
         oplogEntry.setObject(BSON("emptycapped" << collectionName.coll()));
-        logOperation(opCtx, oplogEntry);
+        logOperation(opCtx, &oplogEntry);
     }
 }
 
@@ -824,19 +824,19 @@ std::vector<repl::ReplOperation>::const_iterator packTransactionStatementsForApp
 //
 // Returns the optime of the written oplog entry.
 OpTimeBundle logApplyOpsForTransaction(OperationContext* opCtx,
-                                       MutableOplogEntry& oplogEntry,
+                                       MutableOplogEntry* oplogEntry,
                                        boost::optional<DurableTxnStateEnum> txnState,
                                        boost::optional<repl::OpTime> startOpTime,
                                        const bool updateTxnTable) {
-    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
-    oplogEntry.setNss({"admin", "$cmd"});
-    oplogEntry.setSessionId(opCtx->getLogicalSessionId());
-    oplogEntry.setTxnNumber(opCtx->getTxnNumber());
+    oplogEntry->setOpType(repl::OpTypeEnum::kCommand);
+    oplogEntry->setNss({"admin", "$cmd"});
+    oplogEntry->setSessionId(opCtx->getLogicalSessionId());
+    oplogEntry->setTxnNumber(opCtx->getTxnNumber());
 
     try {
         OpTimeBundle times;
         times.writeOpTime = logOperation(opCtx, oplogEntry);
-        times.wallClockTime = oplogEntry.getWallClockTime().get();
+        times.wallClockTime = oplogEntry->getWallClockTime().get();
         if (updateTxnTable) {
             SessionTxnRecord sessionTxnRecord;
             sessionTxnRecord.setLastWriteOpTime(times.writeOpTime);
@@ -958,7 +958,7 @@ int logOplogEntriesForTransaction(OperationContext* opCtx,
                                              : (implicitPrepare ? DurableTxnStateEnum::kPrepared
                                                                 : DurableTxnStateEnum::kCommitted);
                 prevWriteOpTime = logApplyOpsForTransaction(
-                    opCtx, oplogEntry, txnState, startOpTime, updateTxnTable);
+                    opCtx, &oplogEntry, txnState, startOpTime, updateTxnTable);
 
                 // Advance the iterator to the beginning of the remaining unpacked statements.
                 stmtsIter = nextStmt;
@@ -970,13 +970,13 @@ int logOplogEntriesForTransaction(OperationContext* opCtx,
 }
 
 void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
-                                            MutableOplogEntry& oplogEntry,
+                                            MutableOplogEntry* oplogEntry,
                                             DurableTxnStateEnum durableState) {
-    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
-    oplogEntry.setNss({"admin", "$cmd"});
-    oplogEntry.setSessionId(opCtx->getLogicalSessionId());
-    oplogEntry.setTxnNumber(opCtx->getTxnNumber());
-    oplogEntry.setPrevWriteOpTimeInTransaction(
+    oplogEntry->setOpType(repl::OpTypeEnum::kCommand);
+    oplogEntry->setNss({"admin", "$cmd"});
+    oplogEntry->setSessionId(opCtx->getLogicalSessionId());
+    oplogEntry->setTxnNumber(opCtx->getTxnNumber());
+    oplogEntry->setPrevWriteOpTimeInTransaction(
         TransactionParticipant::get(opCtx).getLastWriteOpTime());
 
     // There should not be a parent WUOW outside of this one. This guarantees the safety of the
@@ -997,11 +997,11 @@ void logCommitOrAbortForPreparedTransaction(OperationContext* opCtx,
 
             WriteUnitOfWork wuow(opCtx);
             const auto oplogOpTime = logOperation(opCtx, oplogEntry);
-            invariant(oplogEntry.getOpTime().isNull() || oplogEntry.getOpTime() == oplogOpTime);
+            invariant(oplogEntry->getOpTime().isNull() || oplogEntry->getOpTime() == oplogOpTime);
 
             SessionTxnRecord sessionTxnRecord;
             sessionTxnRecord.setLastWriteOpTime(oplogOpTime);
-            sessionTxnRecord.setLastWriteDate(oplogEntry.getWallClockTime().get());
+            sessionTxnRecord.setLastWriteDate(oplogEntry->getWallClockTime().get());
             sessionTxnRecord.setState(durableState);
             onWriteOpCompleted(opCtx, {}, sessionTxnRecord);
             wuow.commit();
@@ -1047,7 +1047,7 @@ void OpObserverImpl::onUnpreparedTransactionCommit(
             fcv >= ServerGlobalParams::FeatureCompatibility::Version::kUpgradingTo42,
             DurableTxnStateEnum::kCommitted);
         commitOpTime = logApplyOpsForTransaction(
-                           opCtx, oplogEntry, txnState, boost::none, true /* updateTxnTable */)
+                           opCtx, &oplogEntry, txnState, boost::none, true /* updateTxnTable */)
                            .writeOpTime;
     } else {
         // Reserve all the optimes in advance, so we only need to get the optime mutex once.  We
@@ -1083,7 +1083,7 @@ void OpObserverImpl::onPreparedTransactionCommit(
     cmdObj.setCommitTimestamp(commitTimestamp);
     oplogEntry.setObject(cmdObj.toBSON());
 
-    logCommitOrAbortForPreparedTransaction(opCtx, oplogEntry, DurableTxnStateEnum::kCommitted);
+    logCommitOrAbortForPreparedTransaction(opCtx, &oplogEntry, DurableTxnStateEnum::kCommitted);
 }
 
 void OpObserverImpl::onTransactionPrepare(OperationContext* opCtx,
@@ -1137,7 +1137,7 @@ void OpObserverImpl::onTransactionPrepare(OperationContext* opCtx,
                     fcv >= ServerGlobalParams::FeatureCompatibility::Version::kUpgradingTo42,
                     DurableTxnStateEnum::kPrepared);
                 logApplyOpsForTransaction(
-                    opCtx, oplogEntry, txnState, prepareOpTime, true /* updateTxnTable */);
+                    opCtx, &oplogEntry, txnState, prepareOpTime, true /* updateTxnTable */);
                 wuow.commit();
             });
     } else {
@@ -1177,7 +1177,7 @@ void OpObserverImpl::onTransactionPrepare(OperationContext* opCtx,
                     oplogEntry.setPrevWriteOpTimeInTransaction(repl::OpTime());
                     oplogEntry.setObject(applyOpsBuilder.done());
                     logApplyOpsForTransaction(opCtx,
-                                              oplogEntry,
+                                              &oplogEntry,
                                               DurableTxnStateEnum::kPrepared,
                                               oplogSlot,
                                               true /* updateTxnTable */);
@@ -1211,7 +1211,7 @@ void OpObserverImpl::onTransactionAbort(OperationContext* opCtx,
     AbortTransactionOplogObject cmdObj;
     oplogEntry.setObject(cmdObj.toBSON());
 
-    logCommitOrAbortForPreparedTransaction(opCtx, oplogEntry, DurableTxnStateEnum::kAborted);
+    logCommitOrAbortForPreparedTransaction(opCtx, &oplogEntry, DurableTxnStateEnum::kAborted);
 }
 
 void OpObserverImpl::onReplicationRollback(OperationContext* opCtx,

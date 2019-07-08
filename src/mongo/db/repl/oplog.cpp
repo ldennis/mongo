@@ -357,22 +357,22 @@ void _logOpsInner(OperationContext* opCtx,
         });
 }
 
-OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
+OpTime logOp(OperationContext* opCtx, MutableOplogEntry* oplogEntry) {
     // All collections should have UUIDs now, so all insert, update, and delete oplog entries should
     // also have uuids. Some no-op (n) and command (c) entries may still elide the uuid field.
-    invariant(oplogEntry.getUuid() || oplogEntry.getOpType() == OpTypeEnum::kNoop ||
-                  oplogEntry.getOpType() == OpTypeEnum::kCommand,
+    invariant(oplogEntry->getUuid() || oplogEntry->getOpType() == OpTypeEnum::kNoop ||
+                  oplogEntry->getOpType() == OpTypeEnum::kCommand,
               str::stream() << "Expected uuid for logOp with oplog entry: "
-                            << redact(oplogEntry.toBSON()));
+                            << redact(oplogEntry->toBSON()));
 
     auto replCoord = ReplicationCoordinator::get(opCtx);
     // For commands, the test below is on the command ns and therefore does not check for
     // specific namespaces such as system.profile. This is the caller's responsibility.
-    if (replCoord->isOplogDisabledFor(opCtx, oplogEntry.getNss())) {
+    if (replCoord->isOplogDisabledFor(opCtx, oplogEntry->getNss())) {
         uassert(ErrorCodes::IllegalOperation,
                 str::stream() << "retryable writes is not supported for unreplicated ns: "
-                              << oplogEntry.getNss().ns(),
-                !oplogEntry.getStatementId());
+                              << oplogEntry->getNss().ns(),
+                !oplogEntry->getStatementId());
         return {};
     }
 
@@ -390,42 +390,42 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry& oplogEntry) {
     // before exiting this function so that the same oplog entry instance can be reused for logOp()
     // again. For example, if the WUOW gets aborted within a writeConflictRetry loop, we need to
     // reset the OpTime to null so a new OpTime will be assigned on retry.
-    OplogSlot slot = oplogEntry.getOpTime();
+    OplogSlot slot = oplogEntry->getOpTime();
     auto resetOpTimeGuard = makeGuard([&, resetOpTimeOnExit = bool(slot.isNull()) ] {
         if (resetOpTimeOnExit)
-            oplogEntry.setOpTime(OplogSlot());
+            oplogEntry->setOpTime(OplogSlot());
     });
 
     WriteUnitOfWork wuow(opCtx);
     if (slot.isNull()) {
         slot = oplogInfo->getNextOpTimes(opCtx, 1U)[0];
-        // TODO: make the oplogEntry reference const instead of using the guard.
-        oplogEntry.setOpTime(slot);
+        // TODO: make the oplogEntry a const reference instead of using the guard.
+        oplogEntry->setOpTime(slot);
     }
 
     auto oplog = oplogInfo->getCollection();
-    auto wallClockTime = oplogEntry.getWallClockTime();
+    auto wallClockTime = oplogEntry->getWallClockTime();
     invariant(wallClockTime);
 
-    auto bsonOplogEntry = oplogEntry.toBSON();
+    auto bsonOplogEntry = oplogEntry->toBSON();
     // The storage engine will assign the RecordId based on the "ts" field of the oplog entry, see
     // oploghack::extractKey.
     std::vector<Record> records{
         {RecordId(), RecordData(bsonOplogEntry.objdata(), bsonOplogEntry.objsize())}};
     std::vector<Timestamp> timestamps{slot.getTimestamp()};
-    _logOpsInner(opCtx, oplogEntry.getNss(), &records, timestamps, oplog, slot, *wallClockTime);
+    _logOpsInner(opCtx, oplogEntry->getNss(), &records, timestamps, oplog, slot, *wallClockTime);
     wuow.commit();
     return slot;
 }
 
 std::vector<OpTime> logInsertOps(OperationContext* opCtx,
-                                 MutableOplogEntry& oplogEntryTemplate,
+                                 MutableOplogEntry* oplogEntryTemplate,
                                  std::vector<InsertStatement>::const_iterator begin,
                                  std::vector<InsertStatement>::const_iterator end) {
     invariant(begin != end);
-    oplogEntryTemplate.setOpType(repl::OpTypeEnum::kInsert);
+    oplogEntryTemplate->setOpType(repl::OpTypeEnum::kInsert);
 
-    auto nss = oplogEntryTemplate.getNss();
+    auto nss = oplogEntryTemplate->getNss();
     auto replCoord = ReplicationCoordinator::get(opCtx);
     if (replCoord->isOplogDisabledFor(opCtx, nss)) {
         uassert(ErrorCodes::IllegalOperation,
@@ -454,7 +454,7 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
     std::vector<Record> records(count);
     for (size_t i = 0; i < count; i++) {
         // Make a copy from the template for each insert oplog entry.
-        MutableOplogEntry oplogEntry = oplogEntryTemplate;
+        MutableOplogEntry oplogEntry = *oplogEntryTemplate;
         // Make a mutable copy.
         auto insertStatementOplogSlot = begin[i].oplogSlot;
         // Fetch optime now, if not already fetched.
@@ -490,7 +490,7 @@ std::vector<OpTime> logInsertOps(OperationContext* opCtx,
     auto lastOpTime = opTimes.back();
     invariant(!lastOpTime.isNull());
     auto oplog = oplogInfo->getCollection();
-    auto wallClockTime = oplogEntryTemplate.getWallClockTime();
+    auto wallClockTime = oplogEntryTemplate->getWallClockTime();
     invariant(wallClockTime);
     _logOpsInner(opCtx, nss, &records, timestamps, oplog, lastOpTime, *wallClockTime);
     wuow.commit();
