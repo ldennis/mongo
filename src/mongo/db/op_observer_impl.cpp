@@ -78,18 +78,6 @@ constexpr auto kNumRecordsFieldName = "numRecords"_sd;
 constexpr auto kMsgFieldName = "msg"_sd;
 constexpr long long kInvalidNumRecords = -1LL;
 
-void setOplogLink(MutableOplogEntry& oplogEntry, const repl::OplogLink& oplogLink) {
-    oplogEntry.setPrevWriteOpTimeInTransaction(oplogLink.prevOpTime);
-
-    if (!oplogLink.preImageOpTime.isNull()) {
-        oplogEntry.setPreImageOpTime(oplogLink.preImageOpTime);
-    }
-
-    if (!oplogLink.postImageOpTime.isNull()) {
-        oplogEntry.setPostImageOpTime(oplogLink.postImageOpTime);
-    }
-}
-
 Date_t getWallClockTimeForOpLog(OperationContext* opCtx) {
     auto const clockSource = opCtx->getServiceContext()->getFastClockSource();
     return clockSource->now();
