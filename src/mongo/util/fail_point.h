@@ -78,8 +78,9 @@ public:
     enum RetCode { fastOff = 0, slowOff, slowOn, userIgnored };
 
     struct SyncConfig {
+        SyncConfig() {}
         // Is this failpoint configured for failpoints synchronization.
-        bool enabled;
+        bool enabled = false;
         // Signals to emit when the failpoint is reached.
         std::unordered_set<std::string> signals;
         // Signals to wait for when the failpoint is reached.
@@ -145,8 +146,6 @@ public:
     void shouldFailCloseBlock();
 
     void sync() const;
-
-    bool isSynced() const;
 
     bool syncEnabled() const;
 
@@ -214,6 +213,8 @@ private:
      * Disables this fail point.
      */
     void disableFailPoint();
+
+    bool isSynced() const;
 
     /**
      * slow path for #shouldFailOpenBlock

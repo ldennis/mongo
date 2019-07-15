@@ -403,6 +403,71 @@ TEST(FailPoint, parseBSONValidDataSucceeds) {
     ASSERT_TRUE(swTuple.isOK());
 }
 
+TEST(FailPoint, parseBSONValidSync) {
+    auto swTuple = FailPoint::parseBSON(BSON("mode"
+                                             << "alwaysOn"
+                                             << "sync"
+                                             << BSON("signals" << BSON_ARRAY("a"
+                                                                             << "b"
+                                                                             << "c"))));
+    std::cout << swTuple.getStatus() << std::endl;
+    ASSERT_TRUE(swTuple.isOK());
+
+    swTuple = FailPoint::parseBSON(BSON("mode"
+                                        << "alwaysOn"
+                                        << "sync"
+                                        << BSON("waitFor" << BSON_ARRAY("a"
+                                                                        << "b"
+                                                                        << "c"))));
+    std::cout << swTuple.getStatus() << std::endl;
+    ASSERT_TRUE(swTuple.isOK());
+
+    swTuple = FailPoint::parseBSON(BSON("mode"
+                                        << "alwaysOn"
+                                        << "sync"
+                                        << BSON("signals" << BSON_ARRAY("a"
+                                                                        << "b"
+                                                                        << "c")
+                                                          << "waitFor"
+                                                          << BSON_ARRAY("c"
+                                                                        << "d"
+                                                                        << "e"))));
+    std::cout << swTuple.getStatus() << std::endl;
+    ASSERT_TRUE(swTuple.isOK());
+}
+
+TEST(FailPoint, parseBSONInvalidSyncFails) {
+    auto swTuple = FailPoint::parseBSON(BSON("mode"
+                                             << "alwaysOn"
+                                             << "sync"
+                                             << BSON("signals"
+                                                     << "a")));
+    std::cout << swTuple.getStatus() << std::endl;
+    ASSERT_FALSE(swTuple.isOK());
+
+    swTuple = FailPoint::parseBSON(BSON("mode"
+                                        << "alwaysOn"
+                                        << "sync"
+                                        << BSON("signals" << BSON_ARRAY(1 << 2))));
+    std::cout << swTuple.getStatus() << std::endl;
+    ASSERT_FALSE(swTuple.isOK());
+
+    swTuple = FailPoint::parseBSON(BSON("mode"
+                                        << "alwaysOn"
+                                        << "sync"
+                                        << BSON("waitFor"
+                                                << "a")));
+    std::cout << swTuple.getStatus() << std::endl;
+    ASSERT_FALSE(swTuple.isOK());
+
+    swTuple = FailPoint::parseBSON(BSON("mode"
+                                        << "alwaysOn"
+                                        << "sync"
+                                        << BSON("waitFor" << BSON_ARRAY(1 << 2))));
+    std::cout << swTuple.getStatus() << std::endl;
+    ASSERT_FALSE(swTuple.isOK());
+}
+
 TEST(FailPoint, FailPointBlockBasicTest) {
     auto failPoint = getGlobalFailPointRegistry()->getFailPoint("dummy");
 
