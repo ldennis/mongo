@@ -72,7 +72,8 @@ void setGlobalFailPoint(const std::string& failPointName, const BSONObj& cmdObj)
     FailPoint::Mode mode;
     FailPoint::ValType val;
     BSONObj data;
-    std::tie(mode, val, data) = uassertStatusOK(FailPoint::parseBSON(cmdObj));
+    FailPoint::SyncConfig syncConfig;
+    std::tie(mode, val, data, syncConfig) = uassertStatusOK(FailPoint::parseBSON(cmdObj));
 
     failPoint->setMode(mode, val, data);
     warning() << "failpoint: " << failPointName << " set to: " << failPoint->toBSON();

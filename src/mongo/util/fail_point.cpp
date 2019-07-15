@@ -89,9 +89,9 @@ void FailPoint::shouldFailCloseBlock() {
 }
 
 bool FailPoint::isSynced() const {
-    if (_waitFor.size() == 0)
+    if (_syncConfig.waitFor.size() == 0)
         return true;
-    for (auto w : _waitFor) {
+    for (auto w : _syncConfig.waitFor) {
         if (_activeSignals.find(w) == _activeSignals.end()) {
             return false;
         }
@@ -99,13 +99,17 @@ bool FailPoint::isSynced() const {
     return true;
 }
 
+bool FailPoint::syncEnabled() const {
+    return _syncConfig.enabled;
+}
+
 void FailPoint::sync() const {
-    // if (!syncEnabled()) {
-    //    return;
-    //}
+    if (!syncEnabled()) {
+        return;
+    }
     stdx::unique_lock<stdx::mutex> lk(_syncMutex);
 
-    for (auto& s : _signals) {
+    for (auto& s : _syncConfig.signals) {
         _activeSignals.insert(s);
     }
     _condVar.notify_all();
@@ -199,8 +203,8 @@ FailPoint::RetCode FailPoint::slowShouldFailOpenBlock(
     }
 }
 
-StatusWith<std::tuple<FailPoint::Mode, FailPoint::ValType, BSONObj>> FailPoint::parseBSON(
-    const BSONObj& obj) {
+StatusWith<std::tuple<FailPoint::Mode, FailPoint::ValType, BSONObj, FailPoint::SyncConfig>>
+FailPoint::parseBSON(const BSONObj& obj) {
     Mode mode = FailPoint::alwaysOn;
     ValType val = 0;
     const BSONElement modeElem(obj["mode"]);
@@ -286,7 +290,9 @@ StatusWith<std::tuple<FailPoint::Mode, FailPoint::ValType, BSONObj>> FailPoint::
         data = obj["data"].Obj().getOwned();
     }
 
-    return std::make_tuple(mode, val, data);
+    SyncConfig syncConfig;
+
+    return std::make_tuple(mode, val, data, syncConfig);
 }
 
 BSONObj FailPoint::toBSON() const {

@@ -77,6 +77,15 @@ public:
     enum Mode { off, alwaysOn, random, nTimes, skip };
     enum RetCode { fastOff = 0, slowOff, slowOn, userIgnored };
 
+    struct SyncConfig {
+        // Is this failpoint configured for failpoints synchronization.
+        bool enabled;
+        // Signals to emit when the failpoint is reached.
+        std::unordered_set<std::string> signals;
+        // Signals to wait for when the failpoint is reached.
+        std::unordered_set<std::string> waitFor;
+    };
+
     /**
      * Explicitly resets the seed used for the PRNG in this thread.  If not called on a thread,
      * an instance of SecureRandom is used to seed the PRNG.
@@ -86,7 +95,7 @@ public:
     /**
      * Parses the FailPoint::Mode, FailPoint::ValType, and data BSONObj from the BSON.
      */
-    static StatusWith<std::tuple<Mode, ValType, BSONObj>> parseBSON(const BSONObj& obj);
+    static StatusWith<std::tuple<Mode, ValType, BSONObj, SyncConfig>> parseBSON(const BSONObj& obj);
 
     FailPoint();
 
@@ -187,15 +196,11 @@ private:
     AtomicWord<int> _timesOrPeriod{0};
     BSONObj _data;
 
+    SyncConfig _syncConfig;
+
     // protects _mode, _timesOrPeriod, _data
     mutable stdx::mutex _modMutex;
 
-    // Is this failpoint configured for failpoints synchronization.
-    bool _isSync;
-    // Signals to emit when the failpoint is reached.
-    std::unordered_set<std::string> _signals;
-    // Signals to wait for when the failpoint is reached.
-    std::unordered_set<std::string> _waitFor;
 
     /**
      * Enables this fail point.

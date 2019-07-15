@@ -99,7 +99,8 @@ Status FailPointServerParameter::setFromString(const std::string& str) {
     FailPoint::Mode mode;
     FailPoint::ValType val;
     BSONObj data;
-    std::tie(mode, val, data) = std::move(swParsedOptions.getValue());
+    FailPoint::SyncConfig syncConfig;
+    std::tie(mode, val, data, syncConfig) = std::move(swParsedOptions.getValue());
 
     _data->setMode(mode, val, data);
 
