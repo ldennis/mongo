@@ -77,6 +77,20 @@ public:
     enum Mode { off, alwaysOn, random, nTimes, skip };
     enum RetCode { fastOff = 0, slowOff, slowOn, userIgnored };
 
+    struct SyncConfig {
+        SyncConfig() {}
+        // Is this failpoint configured for failpoints synchronization.
+        bool enabled = false;
+        // Signals to emit when the failpoint is reached.
+        stdx::unordered_set<std::string> signals;
+        // Signals to wait for when the failpoint is reached.
+        stdx::unordered_set<std::string> waitFor;
+        // Clear waitFor signals after successfully waiting.
+        bool clearSignals = false;
+        // The number of seconds to wait for signals.
+        long long timeoutSec = 0;
+    };
+
     /**
      * Explicitly resets the seed used for the PRNG in this thread.  If not called on a thread,
      * an instance of SecureRandom is used to seed the PRNG.
@@ -84,9 +98,14 @@ public:
     static void setThreadPRNGSeed(int32_t seed);
 
     /**
-     * Parses the FailPoint::Mode, FailPoint::ValType, and data BSONObj from the BSON.
+     * Parses the FailPoint::Mode, FailPoint::ValType, data and sync BSONObj from the BSON.
      */
-    static StatusWith<std::tuple<Mode, ValType, BSONObj>> parseBSON(const BSONObj& obj);
+    static StatusWith<std::tuple<Mode, ValType, BSONObj, SyncConfig>> parseBSON(const BSONObj& obj);
+
+    /**
+     * Parses the "sync" field from the BSON.
+     */
+    static StatusWith<SyncConfig> parseSync(const BSONObj& obj);
 
     FailPoint();
 
@@ -136,6 +155,17 @@ public:
     void shouldFailCloseBlock();
 
     /**
+     * Signals and waits for the named signals specified in _syncConfig. This function is
+     * interruptible.
+     */
+    void sync(OperationContext* opCtx) const;
+
+    /**
+     * Return whether this failpoint is configured to use the sync feature.
+     */
+    bool syncEnabled() const;
+
+    /**
      * Changes the settings of this fail point. This will turn off the fail point
      * and waits for all dynamic instances referencing this fail point to go away before
      * actually modifying the settings.
@@ -156,17 +186,29 @@ public:
      * @param extra arbitrary BSON object that can be stored to this fail point
      *     that can be referenced afterwards with #getData. Defaults to an empty
      *     document.
+     *
+     * @param syncConfig the configurations for sync().
      */
-    void setMode(Mode mode, ValType val = 0, const BSONObj& extra = BSONObj());
+    void setMode(Mode mode,
+                 ValType val = 0,
+                 const BSONObj& extra = BSONObj(),
+                 const SyncConfig& syncConfig = SyncConfig());
 
     /**
-     * @returns a BSON object showing the current mode and data stored.
+     * @returns a BSON object showing the current mode, data stored and sync configurations.
      */
     BSONObj toBSON() const;
 
 private:
     static const ValType ACTIVE_BIT = 1 << 31;
     static const ValType REF_COUNTER_MASK = ~ACTIVE_BIT;
+
+    // A set of currently active signals.
+    static stdx::unordered_set<std::string> _activeSignals;
+    // Mutex to protect concurrent access to _activeSignals.
+    static stdx::mutex _syncMutex;
+    // Condition variable for signals waiting.
+    static stdx::condition_variable _syncCond;
 
     // Bit layout:
     // 31: tells whether this fail point is active.
@@ -178,8 +220,11 @@ private:
     AtomicWord<int> _timesOrPeriod{0};
     BSONObj _data;
 
+    SyncConfig _syncConfig;
+
     // protects _mode, _timesOrPeriod, _data
     mutable stdx::mutex _modMutex;
+
 
     /**
      * Enables this fail point.
@@ -190,6 +235,11 @@ private:
      * Disables this fail point.
      */
     void disableFailPoint();
+
+    /**
+     * Return true if all the waitFor signals specified in _syncConfig are active.
+     */
+    bool isSynced() const;
 
     /**
      * slow path for #shouldFailOpenBlock
@@ -273,6 +323,22 @@ inline void MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(OperationContext* op
                                                             FailPoint& failPoint) {
     while (MONGO_FAIL_POINT(failPoint)) {
         opCtx->sleepFor(Milliseconds(100));
+    }
+}
+
+/**
+ * Signals and waits for signals if the failpoint is configured to use the sync feature. This relies
+ * on the 'failPoint' object having a 'sync' field. Otherwise,
+ * this falls back to the behavior of MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED.
+ */
+inline void MONGO_FAIL_POINT_SYNC(OperationContext* opCtx, FailPoint& failPoint) {
+    if (MONGO_FAIL_POINT(failPoint)) {
+        if (failPoint.syncEnabled()) {
+            failPoint.sync(opCtx);
+        } else {
+            // Fall back to regular failpoint blocking behavior.
+            MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(opCtx, failPoint);
+        }
     }
 }
 

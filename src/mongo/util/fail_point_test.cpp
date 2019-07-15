@@ -402,6 +402,60 @@ TEST(FailPoint, parseBSONValidDataSucceeds) {
     ASSERT_TRUE(swTuple.isOK());
 }
 
+TEST(FailPoint, parseSyncValid) {
+    auto syncConfig = FailPoint::parseSync(BSON("sync" << BSON("signals" << BSON_ARRAY("a"))));
+    ASSERT_TRUE(syncConfig.isOK());
+
+    syncConfig = FailPoint::parseSync(BSON("sync" << BSON("signals" << BSON_ARRAY("a"
+                                                                                  << "b"))));
+    ASSERT_TRUE(syncConfig.isOK());
+
+    syncConfig = FailPoint::parseSync(BSON("sync" << BSON("waitFor" << BSON_ARRAY("a"))));
+    ASSERT_TRUE(syncConfig.isOK());
+
+    syncConfig = FailPoint::parseSync(BSON("sync" << BSON("waitFor" << BSON_ARRAY("a"
+                                                                                  << "b"))));
+    ASSERT_TRUE(syncConfig.isOK());
+
+    syncConfig = FailPoint::parseSync(
+        BSON("sync" << BSON("signals" << BSON_ARRAY("a") << "waitFor" << BSON_ARRAY("b"))));
+    ASSERT_TRUE(syncConfig.isOK());
+
+    syncConfig = FailPoint::parseSync(
+        BSON("sync" << BSON("signals" << BSON_ARRAY("a") << "waitFor" << BSON_ARRAY("b")
+                                      << "clearSignals" << true)));
+    ASSERT_TRUE(syncConfig.isOK());
+
+    syncConfig = FailPoint::parseSync(
+        BSON("sync" << BSON("signals" << BSON_ARRAY("a") << "waitFor" << BSON_ARRAY("b")
+                                      << "clearSignals" << true << "timeout" << 60)));
+    ASSERT_TRUE(syncConfig.isOK());
+}
+
+TEST(FailPoint, parseBSONInvalidSyncFails) {
+    auto syncConfig = FailPoint::parseSync(BSON("sync"
+                                                << "a"));
+    ASSERT_FALSE(syncConfig.isOK());
+
+    syncConfig = FailPoint::parseSync(BSON("sync" << BSON("signals"
+                                                          << "a")));
+    ASSERT_FALSE(syncConfig.isOK());
+
+    syncConfig = FailPoint::parseSync(BSON("sync" << BSON("signals" << BSON_ARRAY(1))));
+    ASSERT_FALSE(syncConfig.isOK());
+
+    syncConfig = FailPoint::parseSync(BSON("sync" << BSON("waitFor"
+                                                          << "a")));
+    ASSERT_FALSE(syncConfig.isOK());
+
+    syncConfig = FailPoint::parseSync(BSON("sync" << BSON("waitFor" << BSON_ARRAY(1))));
+    ASSERT_FALSE(syncConfig.isOK());
+
+    syncConfig =
+        FailPoint::parseSync(BSON("sync" << BSON("clearSignals" << true << "timeout" << 60)));
+    ASSERT_FALSE(syncConfig.isOK());
+}
+
 TEST(FailPoint, FailPointBlockBasicTest) {
     auto failPoint = getGlobalFailPointRegistry()->getFailPoint("dummy");
 

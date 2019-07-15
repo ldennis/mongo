@@ -74,6 +74,10 @@ thread_local std::unique_ptr<FailPointPRNG> FailPointPRNG::_failPointPrng;
 
 }  // namespace
 
+stdx::unordered_set<std::string> FailPoint::_activeSignals;
+stdx::mutex FailPoint::_syncMutex;
+stdx::condition_variable FailPoint::_syncCond;
+
 void FailPoint::setThreadPRNGSeed(int32_t seed) {
     FailPointPRNG::current()->resetSeed(seed);
 }
@@ -84,7 +88,64 @@ void FailPoint::shouldFailCloseBlock() {
     _fpInfo.subtractAndFetch(1);
 }
 
-void FailPoint::setMode(Mode mode, ValType val, const BSONObj& extra) {
+bool FailPoint::isSynced() const {
+    if (_syncConfig.waitFor.empty()) {
+        return true;
+    }
+    for (auto w : _syncConfig.waitFor) {
+        // Return false if at least one of the waitFor signals is not active.
+        if (_activeSignals.find(w) == _activeSignals.end()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool FailPoint::syncEnabled() const {
+    return _syncConfig.enabled;
+}
+
+void FailPoint::sync(OperationContext* opCtx) const {
+    // Nothing to do if the failpoint is not configured for sync.
+    if (!syncEnabled()) {
+        return;
+    }
+
+    // Lock the mutex so we are the only thread accessing the _activeSignals.
+    stdx::unique_lock<stdx::mutex> lk(_syncMutex);
+
+    // Emit named signals by putting them in the global active signals set.
+    for (auto& s : _syncConfig.signals) {
+        _activeSignals.insert(s);
+    }
+
+    // Notify all other waiters.
+    _syncCond.notify_all();
+
+    // Wait for signals with the timeout specified.
+    const auto deadline = _syncConfig.timeoutSec > 0
+        ? Date_t::now() + Seconds(_syncConfig.timeoutSec)
+        : Date_t::max();
+    while (!isSynced()) {
+        auto waitStatus = opCtx->waitForConditionOrInterruptNoAssertUntil(_syncCond, lk, deadline);
+        uassertStatusOK(waitStatus);
+        uassert(ErrorCodes::ExceededTimeLimit,
+                "Timed out waiting for signals",
+                waitStatus.getValue() != stdx::cv_status::timeout);
+    }
+
+    // Clear waitFor signals afterwards if necessary.
+    if (_syncConfig.clearSignals && !_syncConfig.waitFor.empty()) {
+        for (auto& w : _syncConfig.waitFor) {
+            _activeSignals.erase(w);
+        }
+    }
+}
+
+void FailPoint::setMode(Mode mode,
+                        ValType val,
+                        const BSONObj& extra,
+                        const SyncConfig& syncConfig) {
     /**
      * Outline:
      *
@@ -111,6 +172,8 @@ void FailPoint::setMode(Mode mode, ValType val, const BSONObj& extra) {
     if (_mode != off) {
         enableFailPoint();
     }
+
+    _syncConfig = syncConfig;
 }
 
 const BSONObj& FailPoint::getData() const {
@@ -168,8 +231,60 @@ FailPoint::RetCode FailPoint::slowShouldFailOpenBlock(
     }
 }
 
-StatusWith<std::tuple<FailPoint::Mode, FailPoint::ValType, BSONObj>> FailPoint::parseBSON(
-    const BSONObj& obj) {
+StatusWith<FailPoint::SyncConfig> FailPoint::parseSync(const BSONObj& obj) {
+    SyncConfig syncConfig;
+    const BSONElement syncElem(obj["sync"]);
+    if (syncElem.eoo())
+        return syncConfig;
+
+    if (syncElem.type() != Object) {
+        return {ErrorCodes::TypeMismatch, "'sync' must be a JSON object"};
+    }
+    const BSONObj syncObj(syncElem.Obj());
+    if (syncObj.hasField("signals")) {
+        const BSONElement signals(syncObj["signals"]);
+        if (!signals.ok() || signals.type() != Array) {
+            return {ErrorCodes::TypeMismatch, "'sync.signals' must be an array of strings"};
+        }
+        auto it = BSONObjIterator(signals.Obj());
+        while (it.more()) {
+            auto e = it.next();
+            if (e.type() != String) {
+                return {ErrorCodes::TypeMismatch, "'sync.signals' must be an array of strings"};
+            }
+            syncConfig.signals.insert(e.String());
+        }
+    }
+    if (syncObj.hasField("waitFor")) {
+        const BSONElement waitFor(syncObj["waitFor"]);
+        if (!waitFor.ok() || waitFor.type() != Array) {
+            return {ErrorCodes::TypeMismatch, "'sync.waitFor' must be an array of strings"};
+        }
+        auto it = BSONObjIterator(waitFor.Obj());
+        while (it.more()) {
+            auto e = it.next();
+            if (e.type() != String) {
+                return {ErrorCodes::TypeMismatch, "'sync.waitFor' must be an array of strings"};
+            }
+            syncConfig.waitFor.insert(e.String());
+        }
+    }
+    if (syncConfig.signals.empty() && syncConfig.waitFor.empty()) {
+        return {ErrorCodes::TypeMismatch, "No 'sync.signals' or 'sync.waitFor' specified"};
+    }
+    if (syncObj.hasField("clearSignals")) {
+        syncConfig.clearSignals = syncObj["clearSignals"].Bool();
+    }
+    if (syncObj.hasField("timeout")) {
+        syncConfig.timeoutSec = syncObj["timeout"].numberLong();
+    }
+    syncConfig.enabled = true;
+
+    return syncConfig;
+}
+
+StatusWith<std::tuple<FailPoint::Mode, FailPoint::ValType, BSONObj, FailPoint::SyncConfig>>
+FailPoint::parseBSON(const BSONObj& obj) {
     Mode mode = FailPoint::alwaysOn;
     ValType val = 0;
     const BSONElement modeElem(obj["mode"]);
@@ -255,7 +370,11 @@ StatusWith<std::tuple<FailPoint::Mode, FailPoint::ValType, BSONObj>> FailPoint::
         data = obj["data"].Obj().getOwned();
     }
 
-    return std::make_tuple(mode, val, data);
+    auto sync = parseSync(obj);
+    if (!sync.isOK()) {
+        return sync.getStatus();
+    }
+    return std::make_tuple(mode, val, data, sync.getValue());
 }
 
 BSONObj FailPoint::toBSON() const {
@@ -264,6 +383,24 @@ BSONObj FailPoint::toBSON() const {
     stdx::lock_guard<stdx::mutex> scoped(_modMutex);
     builder.append("mode", _mode);
     builder.append("data", _data);
+
+    BSONObjBuilder syncBuilder;
+    syncBuilder.append("enabled", _syncConfig.enabled);
+    {
+        BSONArrayBuilder signalsArrayBuilder(syncBuilder.subarrayStart("signals"));
+        for (auto& s : _syncConfig.signals) {
+            signalsArrayBuilder.append(s);
+        }
+    }
+    {
+        BSONArrayBuilder waitForArrayBuilder(syncBuilder.subarrayStart("waitFor"));
+        for (auto& w : _syncConfig.waitFor) {
+            waitForArrayBuilder.append(w);
+        }
+    }
+    syncBuilder.append("timeout", _syncConfig.timeoutSec);
+    syncBuilder.append("clearSignals", _syncConfig.clearSignals);
+    builder.append("sync", syncBuilder.obj());
 
     return builder.obj();
 }
