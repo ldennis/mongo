@@ -102,7 +102,7 @@ Status FailPointServerParameter::setFromString(const std::string& str) {
     FailPoint::SyncConfig syncConfig;
     std::tie(mode, val, data, syncConfig) = std::move(swParsedOptions.getValue());
 
-    _data->setMode(mode, val, data);
+    _data->setMode(mode, val, data, syncConfig);
 
     return Status::OK();
 }

@@ -119,7 +119,10 @@ void FailPoint::sync() const {
     }
 }
 
-void FailPoint::setMode(Mode mode, ValType val, const BSONObj& extra) {
+void FailPoint::setMode(Mode mode,
+                        ValType val,
+                        const BSONObj& extra,
+                        const SyncConfig& syncConfig) {
     /**
      * Outline:
      *
@@ -146,6 +149,8 @@ void FailPoint::setMode(Mode mode, ValType val, const BSONObj& extra) {
     if (_mode != off) {
         enableFailPoint();
     }
+
+    _syncConfig = syncConfig;
 }
 
 const BSONObj& FailPoint::getData() const {

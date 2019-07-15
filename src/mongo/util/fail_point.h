@@ -172,7 +172,10 @@ public:
      *     that can be referenced afterwards with #getData. Defaults to an empty
      *     document.
      */
-    void setMode(Mode mode, ValType val = 0, const BSONObj& extra = BSONObj());
+    void setMode(Mode mode,
+                 ValType val = 0,
+                 const BSONObj& extra = BSONObj(),
+                 const SyncConfig& syncConfig = SyncConfig());
 
     /**
      * @returns a BSON object showing the current mode and data stored.
