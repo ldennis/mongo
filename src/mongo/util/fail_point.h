@@ -168,6 +168,8 @@ private:
     static const ValType ACTIVE_BIT = 1 << 31;
     static const ValType REF_COUNTER_MASK = ~ACTIVE_BIT;
 
+    bool _isSync;
+
     // Bit layout:
     // 31: tells whether this fail point is active.
     // 0~30: unsigned ref counter for active dynamic instances.
