@@ -74,6 +74,10 @@ thread_local std::unique_ptr<FailPointPRNG> FailPointPRNG::_failPointPrng;
 
 }  // namespace
 
+std::unordered_set<std::string> FailPoint::_activeSignals;
+stdx::mutex FailPoint::_syncMutex;
+stdx::condition_variable FailPoint::_condVar;
+
 void FailPoint::setThreadPRNGSeed(int32_t seed) {
     FailPointPRNG::current()->resetSeed(seed);
 }
@@ -82,6 +86,33 @@ FailPoint::FailPoint() = default;
 
 void FailPoint::shouldFailCloseBlock() {
     _fpInfo.subtractAndFetch(1);
+}
+
+bool FailPoint::isSynced() const {
+    if (_waitFor.size() == 0)
+        return true;
+    for (auto w : _waitFor) {
+        if (_activeSignals.find(w) == _activeSignals.end()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void FailPoint::sync() const {
+    // if (!syncEnabled()) {
+    //    return;
+    //}
+    stdx::unique_lock<stdx::mutex> lk(_syncMutex);
+
+    for (auto& s : _signals) {
+        _activeSignals.insert(s);
+    }
+    _condVar.notify_all();
+    auto timeout = Seconds(60);
+    while (!isSynced()) {
+        _condVar.wait_for(lk, timeout.toSystemDuration());
+    }
 }
 
 void FailPoint::setMode(Mode mode, ValType val, const BSONObj& extra) {

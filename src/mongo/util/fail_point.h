@@ -135,6 +135,12 @@ public:
      */
     void shouldFailCloseBlock();
 
+    void sync() const;
+
+    bool isSynced() const;
+
+    bool syncEnabled() const;
+
     /**
      * Changes the settings of this fail point. This will turn off the fail point
      * and waits for all dynamic instances referencing this fail point to go away before
@@ -167,6 +173,9 @@ public:
 private:
     static const ValType ACTIVE_BIT = 1 << 31;
     static const ValType REF_COUNTER_MASK = ~ACTIVE_BIT;
+    static std::unordered_set<std::string> _activeSignals;
+    static stdx::mutex _syncMutex;
+    static stdx::condition_variable _condVar;
 
     // Bit layout:
     // 31: tells whether this fail point is active.
@@ -280,6 +289,18 @@ inline void MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(OperationContext* op
                                                             FailPoint& failPoint) {
     while (MONGO_FAIL_POINT(failPoint)) {
         opCtx->sleepFor(Milliseconds(100));
+    }
+}
+
+inline void MONGO_FAIL_POINT_SYNC(FailPoint& failPoint) {
+    if (MONGO_FAIL_POINT(failPoint)) {
+        if (failPoint.syncEnabled()) {
+            failPoint.sync();
+        } else {
+            while (MONGO_FAIL_POINT(failPoint)) {
+                sleepmillis(100);
+            }
+        }
     }
 }
 
