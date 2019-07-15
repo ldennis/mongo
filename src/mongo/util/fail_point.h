@@ -168,8 +168,6 @@ private:
     static const ValType ACTIVE_BIT = 1 << 31;
     static const ValType REF_COUNTER_MASK = ~ACTIVE_BIT;
 
-    bool _isSync;
-
     // Bit layout:
     // 31: tells whether this fail point is active.
     // 0~30: unsigned ref counter for active dynamic instances.
@@ -182,6 +180,13 @@ private:
 
     // protects _mode, _timesOrPeriod, _data
     mutable stdx::mutex _modMutex;
+
+    // Is this failpoint configured for failpoints synchronization.
+    bool _isSync;
+    // Signals to emit when the failpoint is reached.
+    std::unordered_set<std::string> _signals;
+    // Signals to wait for when the failpoint is reached.
+    std::unordered_set<std::string> _waitFor;
 
     /**
      * Enables this fail point.
