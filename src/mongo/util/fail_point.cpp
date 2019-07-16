@@ -351,6 +351,23 @@ BSONObj FailPoint::toBSON() const {
     builder.append("mode", _mode);
     builder.append("data", _data);
 
+    BSONObjBuilder syncBuilder;
+    syncBuilder.append("enabled", _syncConfig.enabled);
+    {
+        BSONArrayBuilder signalsArrayBuilder(syncBuilder.subarrayStart("signals"));
+        for (auto& s : _syncConfig.signals) {
+            signalsArrayBuilder.append(s);
+        }
+    }
+    {
+        BSONArrayBuilder waitForArrayBuilder(syncBuilder.subarrayStart("waitFor"));
+        for (auto& w : _syncConfig.waitFor) {
+            waitForArrayBuilder.append(w);
+        }
+    }
+    syncBuilder.append("clearSignals", _syncConfig.clearSignals);
+    builder.append("sync", syncBuilder.obj());
+
     return builder.obj();
 }
 }

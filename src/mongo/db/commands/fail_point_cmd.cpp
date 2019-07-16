@@ -97,7 +97,11 @@ public:
              const BSONObj& cmdObj,
              BSONObjBuilder& result) override {
         const std::string failPointName(cmdObj.firstElement().str());
-        setGlobalFailPoint(failPointName, cmdObj);
+
+        if (failPointName == "now" && cmdObj.hasField("sync"))
+            syncNow(cmdObj);
+        else
+            setGlobalFailPoint(failPointName, cmdObj);
 
         return true;
     }

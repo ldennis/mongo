@@ -62,6 +62,22 @@ FailPointRegistry* getGlobalFailPointRegistry() {
     return _fpRegistry.get();
 }
 
+void syncNow(const BSONObj& cmdObj) {
+    FailPoint fp;
+
+    FailPoint::Mode mode;
+    FailPoint::ValType val;
+    BSONObj data;
+    FailPoint::SyncConfig syncConfig;
+    std::tie(mode, val, data, syncConfig) = uassertStatusOK(FailPoint::parseBSON(cmdObj));
+
+    fp.setMode(mode, val, data, syncConfig);
+
+    warning() << "failpoint: 'now' set to: " << fp.toBSON();
+    MONGO_FAIL_POINT_SYNC(fp);
+    warning() << "failpoint: 'now' synced";
+}
+
 void setGlobalFailPoint(const std::string& failPointName, const BSONObj& cmdObj) {
     FailPointRegistry* registry = getGlobalFailPointRegistry();
     FailPoint* failPoint = registry->getFailPoint(failPointName);
