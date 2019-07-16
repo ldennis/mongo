@@ -85,6 +85,8 @@ public:
         std::unordered_set<std::string> signals;
         // Signals to wait for when the failpoint is reached.
         std::unordered_set<std::string> waitFor;
+        // Clear waitFor signals afterwards.
+        bool clearSignals = false;
     };
 
     /**

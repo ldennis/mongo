@@ -89,7 +89,7 @@ void FailPoint::shouldFailCloseBlock() {
 }
 
 bool FailPoint::isSynced() const {
-    if (_syncConfig.waitFor.size() == 0)
+    if (_syncConfig.waitFor.empty())
         return true;
     for (auto w : _syncConfig.waitFor) {
         if (_activeSignals.find(w) == _activeSignals.end()) {
@@ -116,6 +116,11 @@ void FailPoint::sync() const {
     auto timeout = Seconds(60);
     while (!isSynced()) {
         _condVar.wait_for(lk, timeout.toSystemDuration());
+    }
+    if (_syncConfig.clearSignals && !_syncConfig.waitFor.empty()) {
+        for (auto& w : _syncConfig.waitFor) {
+            _activeSignals.erase(w);
+        }
     }
 }
 
@@ -329,6 +334,9 @@ FailPoint::parseBSON(const BSONObj& obj) {
                 }
                 syncConfig.waitFor.insert(e.String());
             }
+        }
+        if (syncObj.hasField("clearSignals")) {
+            syncConfig.clearSignals = syncObj["clearSignals"].Bool();
         }
         syncConfig.enabled = true;
     }
