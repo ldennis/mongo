@@ -87,6 +87,8 @@ public:
         std::unordered_set<std::string> waitFor;
         // Clear waitFor signals afterwards.
         bool clearSignals = false;
+        // The number of seconds to wait for signals.
+        long long timeoutSec = 0;
     };
 
     /**

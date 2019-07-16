@@ -113,9 +113,24 @@ void FailPoint::sync() const {
         _activeSignals.insert(s);
     }
     _condVar.notify_all();
-    auto timeout = Seconds(60);
+    const auto deadline = _syncConfig.timeoutSec > 0
+        ? Date_t::now() + Seconds(_syncConfig.timeoutSec)
+        : Date_t::max();
     while (!isSynced()) {
-        _condVar.wait_for(lk, timeout.toSystemDuration());
+        Milliseconds timeout;
+        if (deadline == Date_t::max()) {
+            timeout = Milliseconds::max();
+        } else {
+            auto now = Date_t::now();
+            if (deadline <= now) {
+                timeout = Milliseconds(0);
+            } else {
+                timeout = deadline - Date_t::now();
+            }
+        }
+        uassert(ErrorCodes::ExceededTimeLimit,
+                "Timed out waiting for signals",
+                _condVar.wait_for(lk, timeout.toSystemDuration()) != stdx::cv_status::timeout);
     }
     if (_syncConfig.clearSignals && !_syncConfig.waitFor.empty()) {
         for (auto& w : _syncConfig.waitFor) {
@@ -337,6 +352,9 @@ FailPoint::parseBSON(const BSONObj& obj) {
         }
         if (syncObj.hasField("clearSignals")) {
             syncConfig.clearSignals = syncObj["clearSignals"].Bool();
+        }
+        if (syncObj.hasField("timeout")) {
+            syncConfig.timeoutSec = syncObj["timeout"].numberLong();
         }
         syncConfig.enabled = true;
     }
