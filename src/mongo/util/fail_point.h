@@ -149,7 +149,7 @@ public:
      */
     void shouldFailCloseBlock();
 
-    void sync() const;
+    void sync(OperationContext* opCtx) const;
 
     bool syncEnabled() const;
 
@@ -305,10 +305,10 @@ inline void MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(OperationContext* op
     }
 }
 
-inline void MONGO_FAIL_POINT_SYNC(FailPoint& failPoint) {
+inline void MONGO_FAIL_POINT_SYNC(OperationContext* opCtx, FailPoint& failPoint) {
     if (MONGO_FAIL_POINT(failPoint)) {
         if (failPoint.syncEnabled()) {
-            failPoint.sync();
+            failPoint.sync(opCtx);
         } else {
             while (MONGO_FAIL_POINT(failPoint)) {
                 sleepmillis(100);

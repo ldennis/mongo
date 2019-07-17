@@ -103,7 +103,7 @@ bool FailPoint::syncEnabled() const {
     return _syncConfig.enabled;
 }
 
-void FailPoint::sync() const {
+void FailPoint::sync(OperationContext* opCtx) const {
     if (!syncEnabled()) {
         return;
     }
@@ -117,20 +117,11 @@ void FailPoint::sync() const {
         ? Date_t::now() + Seconds(_syncConfig.timeoutSec)
         : Date_t::max();
     while (!isSynced()) {
-        Milliseconds timeout;
-        if (deadline == Date_t::max()) {
-            timeout = Milliseconds::max();
-        } else {
-            auto now = Date_t::now();
-            if (deadline <= now) {
-                timeout = Milliseconds(0);
-            } else {
-                timeout = deadline - Date_t::now();
-            }
-        }
+        auto waitStatus =
+            opCtx->waitForConditionOrInterruptNoAssertUntil(_condVar, lk, deadline);
         uassert(ErrorCodes::ExceededTimeLimit,
                 "Timed out waiting for signals",
-                _condVar.wait_for(lk, timeout.toSystemDuration()) != stdx::cv_status::timeout);
+                waitStatus.getValue() != stdx::cv_status::timeout);
     }
     if (_syncConfig.clearSignals && !_syncConfig.waitFor.empty()) {
         for (auto& w : _syncConfig.waitFor) {

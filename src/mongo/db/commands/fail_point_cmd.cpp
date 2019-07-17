@@ -99,7 +99,7 @@ public:
         const std::string failPointName(cmdObj.firstElement().str());
 
         if (failPointName == "now" && cmdObj.hasField("sync"))
-            syncNow(cmdObj);
+            syncNow(opCtx, cmdObj);
         else
             setGlobalFailPoint(failPointName, cmdObj);
 

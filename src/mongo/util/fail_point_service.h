@@ -43,7 +43,7 @@ FailPointRegistry* getGlobalFailPointRegistry();
 /**
  * Signals or waits inline.
  */
-void syncNow(const BSONObj& cmdObj);
+void syncNow(OperationContext* opCtx, const BSONObj& cmdObj);
 
 /**
  * Set a fail point in the global registry to a given value via BSON

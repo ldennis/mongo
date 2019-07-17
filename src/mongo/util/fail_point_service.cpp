@@ -62,7 +62,7 @@ FailPointRegistry* getGlobalFailPointRegistry() {
     return _fpRegistry.get();
 }
 
-void syncNow(const BSONObj& cmdObj) {
+void syncNow(OperationContext* opCtx, const BSONObj& cmdObj) {
     FailPoint fp;
 
     FailPoint::Mode mode;
@@ -74,7 +74,7 @@ void syncNow(const BSONObj& cmdObj) {
     fp.setMode(mode, val, data, syncConfig);
 
     warning() << "failpoint: 'now' set to: " << fp.toBSON();
-    MONGO_FAIL_POINT_SYNC(fp);
+    MONGO_FAIL_POINT_SYNC(opCtx, fp);
     warning() << "failpoint: 'now' synced";
 }
 
