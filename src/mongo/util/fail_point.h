@@ -154,8 +154,15 @@ public:
      */
     void shouldFailCloseBlock();
 
+    /**
+     * Signals and waits for the named signals specified in _syncConfig. This function is
+     * interruptible.
+     */
     void sync(OperationContext* opCtx) const;
 
+    /**
+     * Return whether this failpoint is configured to use the sync feature.
+     */
     bool syncEnabled() const;
 
     /**
@@ -179,6 +186,8 @@ public:
      * @param extra arbitrary BSON object that can be stored to this fail point
      *     that can be referenced afterwards with #getData. Defaults to an empty
      *     document.
+     *
+     * @param syncConfig the configurations for sync().
      */
     void setMode(Mode mode,
                  ValType val = 0,
@@ -186,15 +195,19 @@ public:
                  const SyncConfig& syncConfig = SyncConfig());
 
     /**
-     * @returns a BSON object showing the current mode and data stored.
+     * @returns a BSON object showing the current mode, data stored and sync configurations.
      */
     BSONObj toBSON() const;
 
 private:
     static const ValType ACTIVE_BIT = 1 << 31;
     static const ValType REF_COUNTER_MASK = ~ACTIVE_BIT;
+
+    // A set of currently active signals.
     static std::unordered_set<std::string> _activeSignals;
+    // Mutex to protect concurrent access to _activeSignals.
     static stdx::mutex _syncMutex;
+    // Condition variable for signals waiting.
     static stdx::condition_variable _syncCond;
 
     // Bit layout:
@@ -224,7 +237,7 @@ private:
     void disableFailPoint();
 
     /**
-     * Return true if all the waitFor signals are set.
+     * Return true if all the waitFor signals specified in _syncConfig are set.
      */
     bool isSynced() const;
 
@@ -313,14 +326,17 @@ inline void MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(OperationContext* op
     }
 }
 
+/**
+ * Signals and waits for signals if the failpoint is configured to use the sync feature. Otherwise,
+ * this is the same as MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED.
+ */
 inline void MONGO_FAIL_POINT_SYNC(OperationContext* opCtx, FailPoint& failPoint) {
     if (MONGO_FAIL_POINT(failPoint)) {
         if (failPoint.syncEnabled()) {
             failPoint.sync(opCtx);
         } else {
-            while (MONGO_FAIL_POINT(failPoint)) {
-                sleepmillis(100);
-            }
+            // Fall back to regular failpoint blocking behavior.
+            MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(opCtx, failPoint);
         }
     }
 }
