@@ -384,6 +384,7 @@ BSONObj FailPoint::toBSON() const {
             waitForArrayBuilder.append(w);
         }
     }
+    syncBuilder.append("timeout", _syncConfig.timeoutSec);
     syncBuilder.append("clearSignals", _syncConfig.clearSignals);
     builder.append("sync", syncBuilder.obj());
 
