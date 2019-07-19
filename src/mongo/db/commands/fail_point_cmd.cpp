@@ -48,6 +48,9 @@ namespace mongo {
  * Format
  * {
  *    configureFailPoint: <string>, // name of the fail point.
+ *        If string value 'now' is passed in together with a 'sync' field, runs
+ *        MONGO_FAIL_POINT_SYNC inline with the sync configuration passed.
+ *
  *    mode: <string|Object>, // the new mode to set. Can have one of the
  *        following format:
  *
@@ -61,7 +64,24 @@ namespace mongo {
  *            remain activated.
  *
  *    data: <Object> // optional arbitrary object to store.
- * }
+ *    sync: <Object> // optional object that stores parameters used for failpoint synchronization.
+ *                   // Has the following fields:
+ *        signals - An array of strings representing names of signals to emit once a failpoint is
+ *        triggered.
+ *        waitFor - An array of strings representing names of signals to wait for before a failpoint
+ *        can be unblocked.
+ *        timeout - The number of seconds to wait for signals from the waitFor array before timing
+ *        out.
+ *        clearSignal - A boolean field representing whether to deactivate a signal once we have
+ *        successfully waited for it.
+ *
+ *     Example:
+ *        sync: {
+ *          signals: [<named_signal1>, <named_signal2>],
+ *          waitFor: [<named_signal1>, <named_signal2>],
+ *          timeout: <seconds>,
+ *          clearSignal: <true/false>
+ *        }
  */
 class FaultInjectCmd : public BasicCommand {
 public:
@@ -97,12 +117,12 @@ public:
              const BSONObj& cmdObj,
              BSONObjBuilder& result) override {
         const std::string failPointName(cmdObj.firstElement().str());
-
-        if (failPointName == "now" && cmdObj.hasField("sync"))
+        if (failPointName == "now" && cmdObj.hasField("sync")) {
+            // Perform synchronization inline when failpointName is 'now'.
             syncNow(opCtx, cmdObj);
-        else
+        } else {
             setGlobalFailPoint(failPointName, cmdObj);
-
+        }
         return true;
     }
 };

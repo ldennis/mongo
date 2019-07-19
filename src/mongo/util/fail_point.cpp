@@ -89,10 +89,11 @@ void FailPoint::shouldFailCloseBlock() {
 }
 
 bool FailPoint::isSynced() const {
-    if (_syncConfig.waitFor.empty())
+    if (_syncConfig.waitFor.empty()) {
         return true;
+    }
     for (auto w : _syncConfig.waitFor) {
-        // Return false if at least one of the waitFor signals is not set.
+        // Return false if at least one of the waitFor signals is not active.
         if (_activeSignals.find(w) == _activeSignals.end()) {
             return false;
         }

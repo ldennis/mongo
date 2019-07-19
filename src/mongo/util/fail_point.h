@@ -85,7 +85,7 @@ public:
         std::unordered_set<std::string> signals;
         // Signals to wait for when the failpoint is reached.
         std::unordered_set<std::string> waitFor;
-        // Clear waitFor signals afterwards.
+        // Clear waitFor signals after successfully waiting.
         bool clearSignals = false;
         // The number of seconds to wait for signals.
         long long timeoutSec = 0;
@@ -237,7 +237,7 @@ private:
     void disableFailPoint();
 
     /**
-     * Return true if all the waitFor signals specified in _syncConfig are set.
+     * Return true if all the waitFor signals specified in _syncConfig are active.
      */
     bool isSynced() const;
 
@@ -330,27 +330,6 @@ inline void MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(OperationContext* op
  * Signals and waits for signals if the failpoint is configured to use the sync feature. This relies
  * on the 'failPoint' object having a 'sync' field. Otherwise,
  * this falls back to the behavior of MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED.
-
- * The sync field accepts the following parameters:
- * signals - An array of strings representing names of signals to emit once a failpoint is
- * triggered.
- * waitFor - An array of strings representing names of signals to wait for before a failpoint can be
- * unblocked.
- * timeout - The number of seconds to wait for signals from the waitFor array before timing out.
- * clearSignal - A boolean field representing whether to deactivate a signal once we have
- * successfully waited for it.
- *
- * Example:
- * {
- *    configureFailPoint: “<name_of_failpoint>”,
- *    mode: “<mode>”,
- *    sync: {
- *      signals: [<named_signal1>, <named_signal2>],
- *      waitFor: [<named_signal1>, <named_signal2>],
- *      timeout: <seconds>,
- *      clearSignal: <true/false>
- *    }
- * }
  */
 inline void MONGO_FAIL_POINT_SYNC(OperationContext* opCtx, FailPoint& failPoint) {
     if (MONGO_FAIL_POINT(failPoint)) {
