@@ -127,6 +127,7 @@ void FailPoint::sync(OperationContext* opCtx) const {
         : Date_t::max();
     while (!isSynced()) {
         auto waitStatus = opCtx->waitForConditionOrInterruptNoAssertUntil(_syncCond, lk, deadline);
+        uassertStatusOK(waitStatus);
         uassert(ErrorCodes::ExceededTimeLimit,
                 "Timed out waiting for signals",
                 waitStatus.getValue() != stdx::cv_status::timeout);
