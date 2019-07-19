@@ -229,6 +229,58 @@ FailPoint::RetCode FailPoint::slowShouldFailOpenBlock(
     }
 }
 
+StatusWith<FailPoint::SyncConfig> FailPoint::parseSync(const BSONObj& obj) {
+    SyncConfig syncConfig;
+    const BSONElement syncElem(obj["sync"]);
+    if (syncElem.eoo())
+        return syncConfig;
+
+    if (syncElem.type() != Object) {
+        return {ErrorCodes::TypeMismatch, "'sync' must be a JSON object"};
+    }
+    const BSONObj syncObj(syncElem.Obj());
+    if (syncObj.hasField("signals")) {
+        const BSONElement signals(syncObj["signals"]);
+        if (!signals.ok() || signals.type() != Array) {
+            return {ErrorCodes::TypeMismatch, "'sync.signals' must be an array of strings"};
+        }
+        auto it = BSONObjIterator(signals.Obj());
+        while (it.more()) {
+            auto e = it.next();
+            if (e.type() != String) {
+                return {ErrorCodes::TypeMismatch, "'sync.signals' must be an array of strings"};
+            }
+            syncConfig.signals.insert(e.String());
+        }
+    }
+    if (syncObj.hasField("waitFor")) {
+        const BSONElement waitFor(syncObj["waitFor"]);
+        if (!waitFor.ok() || waitFor.type() != Array) {
+            return {ErrorCodes::TypeMismatch, "'sync.waitFor' must be an array of strings"};
+        }
+        auto it = BSONObjIterator(waitFor.Obj());
+        while (it.more()) {
+            auto e = it.next();
+            if (e.type() != String) {
+                return {ErrorCodes::TypeMismatch, "'sync.waitFor' must be an array of strings"};
+            }
+            syncConfig.waitFor.insert(e.String());
+        }
+    }
+    if (syncConfig.signals.empty() && syncConfig.waitFor.empty()) {
+        return {ErrorCodes::TypeMismatch, "No 'sync.signals' or 'sync.waitFor' specified"};
+    }
+    if (syncObj.hasField("clearSignals")) {
+        syncConfig.clearSignals = syncObj["clearSignals"].Bool();
+    }
+    if (syncObj.hasField("timeout")) {
+        syncConfig.timeoutSec = syncObj["timeout"].numberLong();
+    }
+    syncConfig.enabled = true;
+
+    return syncConfig;
+}
+
 StatusWith<std::tuple<FailPoint::Mode, FailPoint::ValType, BSONObj, FailPoint::SyncConfig>>
 FailPoint::parseBSON(const BSONObj& obj) {
     Mode mode = FailPoint::alwaysOn;
@@ -316,51 +368,11 @@ FailPoint::parseBSON(const BSONObj& obj) {
         data = obj["data"].Obj().getOwned();
     }
 
-    SyncConfig syncConfig;
-    const BSONElement syncElem(obj["sync"]);
-    if (!syncElem.eoo()) {
-        if (syncElem.type() != Object) {
-            return {ErrorCodes::TypeMismatch, "'sync' must be a JSON object"};
-        }
-        const BSONObj syncObj(syncElem.Obj());
-        if (syncObj.hasField("signals")) {
-            const BSONElement signals(syncObj["signals"]);
-            if (!signals.ok() || signals.type() != Array) {
-                return {ErrorCodes::TypeMismatch, "'sync.signals' must be an array of strings"};
-            }
-            auto it = BSONObjIterator(signals.Obj());
-            while (it.more()) {
-                auto e = it.next();
-                if (e.type() != String) {
-                    return {ErrorCodes::TypeMismatch, "'sync.signals' must be an array of strings"};
-                }
-                syncConfig.signals.insert(e.String());
-            }
-        }
-        if (syncObj.hasField("waitFor")) {
-            const BSONElement waitFor(syncObj["waitFor"]);
-            if (!waitFor.ok() || waitFor.type() != Array) {
-                return {ErrorCodes::TypeMismatch, "'sync.waitFor' must be an array of strings"};
-            }
-            auto it = BSONObjIterator(waitFor.Obj());
-            while (it.more()) {
-                auto e = it.next();
-                if (e.type() != String) {
-                    return {ErrorCodes::TypeMismatch, "'sync.waitFor' must be an array of strings"};
-                }
-                syncConfig.waitFor.insert(e.String());
-            }
-        }
-        if (syncObj.hasField("clearSignals")) {
-            syncConfig.clearSignals = syncObj["clearSignals"].Bool();
-        }
-        if (syncObj.hasField("timeout")) {
-            syncConfig.timeoutSec = syncObj["timeout"].numberLong();
-        }
-        syncConfig.enabled = true;
+    auto sync = parseSync(obj);
+    if (!sync.isOK()) {
+        return sync.getStatus();
     }
-
-    return std::make_tuple(mode, val, data, syncConfig);
+    return std::make_tuple(mode, val, data, sync.getValue());
 }
 
 BSONObj FailPoint::toBSON() const {

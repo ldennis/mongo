@@ -65,11 +65,10 @@ FailPointRegistry* getGlobalFailPointRegistry() {
 void syncNow(OperationContext* opCtx, const BSONObj& cmdObj) {
     FailPoint fp;
 
-    FailPoint::Mode mode;
+    FailPoint::Mode mode = FailPoint::alwaysOn;
     FailPoint::ValType val;
     BSONObj data;
-    FailPoint::SyncConfig syncConfig;
-    std::tie(mode, val, data, syncConfig) = uassertStatusOK(FailPoint::parseBSON(cmdObj));
+    FailPoint::SyncConfig syncConfig = uassertStatusOK(FailPoint::parseSync(cmdObj));
 
     fp.setMode(mode, val, data, syncConfig);
 

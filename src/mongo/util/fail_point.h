@@ -102,6 +102,11 @@ public:
      */
     static StatusWith<std::tuple<Mode, ValType, BSONObj, SyncConfig>> parseBSON(const BSONObj& obj);
 
+    /**
+     * Parses the "sync" field from the BSON.
+     */
+    static StatusWith<SyncConfig> parseSync(const BSONObj& obj);
+
     FailPoint();
 
     /**
