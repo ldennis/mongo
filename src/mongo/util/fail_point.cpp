@@ -76,7 +76,7 @@ thread_local std::unique_ptr<FailPointPRNG> FailPointPRNG::_failPointPrng;
 
 std::unordered_set<std::string> FailPoint::_activeSignals;
 stdx::mutex FailPoint::_syncMutex;
-stdx::condition_variable FailPoint::_condVar;
+stdx::condition_variable FailPoint::_syncCond;
 
 void FailPoint::setThreadPRNGSeed(int32_t seed) {
     FailPointPRNG::current()->resetSeed(seed);
@@ -92,6 +92,7 @@ bool FailPoint::isSynced() const {
     if (_syncConfig.waitFor.empty())
         return true;
     for (auto w : _syncConfig.waitFor) {
+        // Return false if at least one of the waitFor signals is not set.
         if (_activeSignals.find(w) == _activeSignals.end()) {
             return false;
         }
@@ -104,25 +105,34 @@ bool FailPoint::syncEnabled() const {
 }
 
 void FailPoint::sync(OperationContext* opCtx) const {
+    // Nothing to do if the failpoint is not configured for sync.
     if (!syncEnabled()) {
         return;
     }
+
+    // Lock the mutex so we are the only thread accessing the _activeSignals.
     stdx::unique_lock<stdx::mutex> lk(_syncMutex);
 
+    // Emit named signals by putting them in the global active signals set.
     for (auto& s : _syncConfig.signals) {
         _activeSignals.insert(s);
     }
-    _condVar.notify_all();
+
+    // Notify all other waiters.
+    _syncCond.notify_all();
+
+    // Wait for signals with the timeout specified.
     const auto deadline = _syncConfig.timeoutSec > 0
         ? Date_t::now() + Seconds(_syncConfig.timeoutSec)
         : Date_t::max();
     while (!isSynced()) {
-        auto waitStatus =
-            opCtx->waitForConditionOrInterruptNoAssertUntil(_condVar, lk, deadline);
+        auto waitStatus = opCtx->waitForConditionOrInterruptNoAssertUntil(_syncCond, lk, deadline);
         uassert(ErrorCodes::ExceededTimeLimit,
                 "Timed out waiting for signals",
                 waitStatus.getValue() != stdx::cv_status::timeout);
     }
+
+    // Clear waitFor signals afterwards if necessary.
     if (_syncConfig.clearSignals && !_syncConfig.waitFor.empty()) {
         for (auto& w : _syncConfig.waitFor) {
             _activeSignals.erase(w);

@@ -98,7 +98,7 @@ public:
     static void setThreadPRNGSeed(int32_t seed);
 
     /**
-     * Parses the FailPoint::Mode, FailPoint::ValType, and data BSONObj from the BSON.
+     * Parses the FailPoint::Mode, FailPoint::ValType, data and sync BSONObj from the BSON.
      */
     static StatusWith<std::tuple<Mode, ValType, BSONObj, SyncConfig>> parseBSON(const BSONObj& obj);
 
@@ -190,7 +190,7 @@ private:
     static const ValType REF_COUNTER_MASK = ~ACTIVE_BIT;
     static std::unordered_set<std::string> _activeSignals;
     static stdx::mutex _syncMutex;
-    static stdx::condition_variable _condVar;
+    static stdx::condition_variable _syncCond;
 
     // Bit layout:
     // 31: tells whether this fail point is active.
@@ -218,6 +218,9 @@ private:
      */
     void disableFailPoint();
 
+    /**
+     * Return true if all the waitFor signals are set.
+     */
     bool isSynced() const;
 
     /**
