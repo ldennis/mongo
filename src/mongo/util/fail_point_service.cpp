@@ -66,7 +66,7 @@ void syncNow(OperationContext* opCtx, const BSONObj& cmdObj) {
     FailPoint fp;
 
     FailPoint::Mode mode = FailPoint::alwaysOn;
-    FailPoint::ValType val;
+    FailPoint::ValType val = 0;
     BSONObj data;
     FailPoint::SyncConfig syncConfig = uassertStatusOK(FailPoint::parseSync(cmdObj));
 
