@@ -74,7 +74,7 @@ thread_local std::unique_ptr<FailPointPRNG> FailPointPRNG::_failPointPrng;
 
 }  // namespace
 
-std::unordered_set<std::string> FailPoint::_activeSignals;
+stdx::unordered_set<std::string> FailPoint::_activeSignals;
 stdx::mutex FailPoint::_syncMutex;
 stdx::condition_variable FailPoint::_syncCond;
 

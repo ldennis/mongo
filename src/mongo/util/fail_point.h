@@ -82,9 +82,9 @@ public:
         // Is this failpoint configured for failpoints synchronization.
         bool enabled = false;
         // Signals to emit when the failpoint is reached.
-        std::unordered_set<std::string> signals;
+        stdx::unordered_set<std::string> signals;
         // Signals to wait for when the failpoint is reached.
-        std::unordered_set<std::string> waitFor;
+        stdx::unordered_set<std::string> waitFor;
         // Clear waitFor signals after successfully waiting.
         bool clearSignals = false;
         // The number of seconds to wait for signals.
@@ -204,7 +204,7 @@ private:
     static const ValType REF_COUNTER_MASK = ~ACTIVE_BIT;
 
     // A set of currently active signals.
-    static std::unordered_set<std::string> _activeSignals;
+    static stdx::unordered_set<std::string> _activeSignals;
     // Mutex to protect concurrent access to _activeSignals.
     static stdx::mutex _syncMutex;
     // Condition variable for signals waiting.
