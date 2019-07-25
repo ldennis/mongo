@@ -66,11 +66,12 @@ public:
         return *(_batch.front());
     }
 
-    bool isBatched() const {
+    bool isGroupedInserts() const {
         return _batch.size() > 1;
     }
 
-    const OperationPtrs& getBatch() const {
+    const OperationPtrs& getGroupedInserts() const {
+        invariant(isGroupedInserts());
         return _batch;
     }
 

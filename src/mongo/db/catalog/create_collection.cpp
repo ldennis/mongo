@@ -219,7 +219,6 @@ Status createCollectionForApplyOps(OperationContext* opCtx,
         auto result =
             writeConflictRetry(opCtx, "createCollectionForApplyOps", newCollName.ns(), [&] {
                 WriteUnitOfWork wunit(opCtx);
-                // Options need the field to be named "uuid".
                 auto uuid = ui.get();
                 uassert(ErrorCodes::InvalidUUID,
                         "Invalid UUID in applyOps create command: " + uuid.toString(),

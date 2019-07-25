@@ -193,9 +193,8 @@ inline std::ostream& operator<<(std::ostream& s, OplogApplication::Mode mode) {
 }
 
 /**
- * Take a non-command batch and apply oplog entries locally.
- * Used for applying from an oplog entry or batch inserts.
- * @param batch a single oplog entry or batched inserts to be applied.
+ * Used for applying from an oplog entry or grouped inserts.
+ * @param opOrGroupedInserts a single oplog entry or grouped inserts to be applied.
  * @param alwaysUpsert convert some updates to upserts for idempotency reasons
  * @param mode specifies what oplog application mode we are in
  * @param incrementOpsAppliedStats is called whenever an op is applied.
@@ -203,7 +202,7 @@ inline std::ostream& operator<<(std::ostream& s, OplogApplication::Mode mode) {
  */
 Status applyOperation_inlock(OperationContext* opCtx,
                              Database* db,
-                             const OplogEntryBatch& batch,
+                             const OplogEntryBatch& opOrGroupedInserts,
                              bool alwaysUpsert,
                              OplogApplication::Mode mode,
                              IncrementOpsAppliedStatsFn incrementOpsAppliedStats = {});

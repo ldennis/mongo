@@ -1150,12 +1150,13 @@ StatusWith<OplogApplication::Mode> OplogApplication::parseMode(const std::string
 // See replset initial sync code.
 Status applyOperation_inlock(OperationContext* opCtx,
                              Database* db,
-                             const OplogEntryBatch& batch,
+                             const OplogEntryBatch& opOrGroupedInserts,
                              bool alwaysUpsert,
                              OplogApplication::Mode mode,
                              IncrementOpsAppliedStatsFn incrementOpsAppliedStats) {
-    auto op = batch.getOp();
-    LOG(3) << "applying op: " << redact(batch.toBSON())
+    // Get the single oplog entry to be applied or the first oplog entry of grouped inserts.
+    auto op = opOrGroupedInserts.getOp();
+    LOG(3) << "applying op (or grouped inserts): " << redact(opOrGroupedInserts.toBSON())
            << ", oplog application mode: " << OplogApplication::modeToString(mode);
 
     // Choose opCounters based on running on standalone/primary or secondary by checking
@@ -1165,9 +1166,7 @@ Status applyOperation_inlock(OperationContext* opCtx,
         mode == repl::OplogApplication::Mode::kApplyOpsCmd || opCtx->writesAreReplicated();
     OpCounters* opCounters = shouldUseGlobalOpCounters ? &globalOpCounters : &replOpCounters;
 
-    // operation type -- see logOp() comments for types
     auto opType = op.getOpType();
-
     if (opType == OpTypeEnum::kNoop) {
         // no op
         if (incrementOpsAppliedStats) {
@@ -1186,7 +1185,7 @@ Status applyOperation_inlock(OperationContext* opCtx,
                 str::stream() << "Failed to apply operation due to missing collection ("
                               << uuid.get()
                               << "): "
-                              << redact(batch.toBSON()),
+                              << redact(opOrGroupedInserts.toBSON()),
                 collection);
         requestNss = collection->ns();
         dassert(opCtx->lockState()->isCollectionLockedForMode(
@@ -1212,15 +1211,13 @@ Status applyOperation_inlock(OperationContext* opCtx,
             return Status(ErrorCodes::OplogOperationUnsupported,
                           str::stream() << "Applying operation on feature compatibility version "
                                            "document not supported in initial sync: "
-                                        << redact(batch.toBSON()));
+                                        << redact(opOrGroupedInserts.toBSON()));
         }
     }
 
     BSONObj o2;
     if (op.getObject2())
         o2 = op.getObject2().get();
-
-    bool valueB = op.getUpsert().value_or(false);
 
     IndexCatalog* indexCatalog = collection == nullptr ? nullptr : collection->getIndexCatalog();
     const bool haveWrappingWriteUnitOfWork = opCtx->lockState()->inAWriteUnitOfWork();
@@ -1285,290 +1282,302 @@ Status applyOperation_inlock(OperationContext* opCtx,
     }();
     invariant(!assignOperationTimestamp || !op.getTimestamp().isNull(),
               str::stream() << "Oplog entry did not have 'ts' field when expected: "
-                            << redact(batch.toBSON()));
+                            << redact(opOrGroupedInserts.toBSON()));
 
-    if (opType == OpTypeEnum::kInsert) {
-        uassert(ErrorCodes::NamespaceNotFound,
-                str::stream() << "Failed to apply insert due to missing collection: "
-                              << redact(batch.toBSON()),
-                collection);
+    switch (opType) {
+        case OpTypeEnum::kInsert: {
+            uassert(ErrorCodes::NamespaceNotFound,
+                    str::stream() << "Failed to apply insert due to missing collection: "
+                                  << redact(opOrGroupedInserts.toBSON()),
+                    collection);
 
-        if (batch.isBatched()) {
-            // Batched inserts.
+            if (opOrGroupedInserts.isGroupedInserts()) {
+                // Grouped inserts.
 
-            // Cannot apply an array insert with applyOps command.  No support for wiping out
-            // the provided timestamps and using new ones for oplog.
-            uassert(ErrorCodes::OperationFailed,
-                    "Cannot apply an array insert with applyOps",
-                    !opCtx->writesAreReplicated());
+                // Cannot apply an array insert with applyOps command. No support for wiping out the
+                // provided timestamps and using new ones for oplog.
+                uassert(ErrorCodes::OperationFailed,
+                        "Cannot apply an array insert with applyOps",
+                        !opCtx->writesAreReplicated());
 
-            std::vector<InsertStatement> insertObjs;
-            const auto insertOps = batch.getBatch();
-            for (const auto iOp : insertOps) {
-                invariant(iOp->getTerm());
-                insertObjs.emplace_back(
-                    iOp->getObject(), iOp->getTimestamp(), iOp->getTerm().get());
-            }
+                std::vector<InsertStatement> insertObjs;
+                const auto insertOps = opOrGroupedInserts.getGroupedInserts();
+                for (const auto iOp : insertOps) {
+                    invariant(iOp->getTerm());
+                    insertObjs.emplace_back(
+                        iOp->getObject(), iOp->getTimestamp(), iOp->getTerm().get());
+                }
 
-            WriteUnitOfWork wuow(opCtx);
-            OpDebug* const nullOpDebug = nullptr;
-            Status status = collection->insertDocuments(
-                opCtx, insertObjs.begin(), insertObjs.end(), nullOpDebug, true);
-            if (!status.isOK()) {
-                return status;
-            }
-            wuow.commit();
-            for (auto entry : insertObjs) {
+                WriteUnitOfWork wuow(opCtx);
+                OpDebug* const nullOpDebug = nullptr;
+                Status status = collection->insertDocuments(
+                    opCtx, insertObjs.begin(), insertObjs.end(), nullOpDebug, true);
+                if (!status.isOK()) {
+                    return status;
+                }
+                wuow.commit();
+                for (auto entry : insertObjs) {
+                    opCounters->gotInsert();
+                    if (shouldUseGlobalOpCounters) {
+                        ServerWriteConcernMetrics::get(opCtx)->recordWriteConcernForInsert(
+                            opCtx->getWriteConcern());
+                    }
+                    if (incrementOpsAppliedStats) {
+                        incrementOpsAppliedStats();
+                    }
+                }
+            } else {
+                // Single insert.
                 opCounters->gotInsert();
                 if (shouldUseGlobalOpCounters) {
                     ServerWriteConcernMetrics::get(opCtx)->recordWriteConcernForInsert(
                         opCtx->getWriteConcern());
                 }
-                if (incrementOpsAppliedStats) {
-                    incrementOpsAppliedStats();
-                }
-            }
-        } else {
-            // Single insert.
-            opCounters->gotInsert();
-            if (shouldUseGlobalOpCounters) {
-                ServerWriteConcernMetrics::get(opCtx)->recordWriteConcernForInsert(
-                    opCtx->getWriteConcern());
-            }
 
-            // No _id.
-            // This indicates an issue with the upstream server:
-            //     The oplog entry is corrupted; or
-            //     The version of the upstream server is obsolete.
-            uassert(ErrorCodes::NoSuchKey,
-                    str::stream() << "Failed to apply insert due to missing _id: "
-                                  << redact(op.toBSON()),
-                    o.hasField("_id"));
+                // No _id.
+                // This indicates an issue with the upstream server:
+                //     The oplog entry is corrupted; or
+                //     The version of the upstream server is obsolete.
+                uassert(ErrorCodes::NoSuchKey,
+                        str::stream() << "Failed to apply insert due to missing _id: "
+                                      << redact(op.toBSON()),
+                        o.hasField("_id"));
 
-            // 1. Insert if
-            //   a) we do not have a wrapping WriteUnitOfWork, which implies we are not part of an
-            //      "applyOps" command, OR
-            //   b) we are part of a multi-document transaction[1].
-            //
-            // 2. Upsert[2] if
-            //   a) we have a wrapping WriteUnitOfWork AND we are not part of a transaction, which
-            //      implies we are part of an "applyOps" command, OR
-            //   b) the previous insert failed with a DuplicateKey error AND we are not part of a
-            //      transaction.
-            //
-            // [1] Transactions should not convert inserts to upserts because on secondaries they
-            //     will perform a lookup that never occurred on the primary. This may cause an
-            //     unintended prepare conflict and block replication. For this reason, transactions
-            //     should always fail with DuplicateKey errors and never retry inserts as upserts.
-            // [2] This upsert behavior exists to support idempotency guarantees outside
-            //     steady-state replication and existing users of applyOps.
+                // 1. Insert if
+                //   a) we do not have a wrapping WriteUnitOfWork, which implies we are not part of
+                //      an "applyOps" command, OR
+                //   b) we are part of a multi-document transaction[1].
+                //
+                // 2. Upsert[2] if
+                //   a) we have a wrapping WriteUnitOfWork AND we are not part of a transaction,
+                //      which implies we are part of an "applyOps" command, OR
+                //   b) the previous insert failed with a DuplicateKey error AND we are not part of
+                //      a transaction.
+                //
+                // [1] Transactions should not convert inserts to upserts because on secondaries
+                //     they will perform a lookup that never occurred on the primary. This may cause
+                //     an unintended prepare conflict and block replication. For this reason,
+                //     transactions should always fail with DuplicateKey errors and never retry
+                //     inserts as upserts.
+                // [2] This upsert behavior exists to support idempotency guarantees outside
+                //     steady-state replication and existing users of applyOps.
 
-            const auto txnParticipant = TransactionParticipant::get(opCtx);
-            const bool inTxn = txnParticipant && txnParticipant.inMultiDocumentTransaction();
-            bool needToDoUpsert = haveWrappingWriteUnitOfWork && !inTxn;
+                const auto txnParticipant = TransactionParticipant::get(opCtx);
+                const bool inTxn = txnParticipant && txnParticipant.inMultiDocumentTransaction();
+                bool needToDoUpsert = haveWrappingWriteUnitOfWork && !inTxn;
 
-            Timestamp timestamp;
-            long long term = OpTime::kUninitializedTerm;
-            if (assignOperationTimestamp) {
-                timestamp = op.getTimestamp();
-                invariant(op.getTerm());
-                term = op.getTerm().get();
-            }
-
-            if (!needToDoUpsert) {
-                WriteUnitOfWork wuow(opCtx);
-
-                // Do not use supplied timestamps if running through applyOps, as that would allow
-                // a user to dictate what timestamps appear in the oplog.
+                Timestamp timestamp;
+                long long term = OpTime::kUninitializedTerm;
                 if (assignOperationTimestamp) {
                     timestamp = op.getTimestamp();
                     invariant(op.getTerm());
                     term = op.getTerm().get();
                 }
 
-                OpDebug* const nullOpDebug = nullptr;
-                Status status = collection->insertDocument(
-                    opCtx, InsertStatement(o, timestamp, term), nullOpDebug, true);
+                if (!needToDoUpsert) {
+                    WriteUnitOfWork wuow(opCtx);
 
-                if (status.isOK()) {
-                    wuow.commit();
-                } else if (status == ErrorCodes::DuplicateKey) {
-                    // Transactions cannot be retried as upserts once they fail with a duplicate key
-                    // error.
-                    if (inTxn) {
+                    // Do not use supplied timestamps if running through applyOps, as that would
+                    // allow a user to dictate what timestamps appear in the oplog.
+                    if (assignOperationTimestamp) {
+                        timestamp = op.getTimestamp();
+                        invariant(op.getTerm());
+                        term = op.getTerm().get();
+                    }
+
+                    OpDebug* const nullOpDebug = nullptr;
+                    Status status = collection->insertDocument(
+                        opCtx, InsertStatement(o, timestamp, term), nullOpDebug, true);
+
+                    if (status.isOK()) {
+                        wuow.commit();
+                    } else if (status == ErrorCodes::DuplicateKey) {
+                        // Transactions cannot be retried as upserts once they fail with a duplicate
+                        // key error.
+                        if (inTxn) {
+                            return status;
+                        }
+                        // Continue to the next block to retry the operation as an upsert.
+                        needToDoUpsert = true;
+                    } else {
                         return status;
                     }
-                    // Continue to the next block to retry the operation as an upsert.
-                    needToDoUpsert = true;
-                } else {
-                    return status;
+                }
+
+                // Now see if we need to do an upsert.
+                if (needToDoUpsert) {
+                    // Do update on DuplicateKey errors.
+                    // This will only be on the _id field in replication,
+                    // since we disable non-_id unique constraint violations.
+                    BSONObjBuilder b;
+                    b.append(o.getField("_id"));
+
+                    UpdateRequest request(requestNss);
+                    request.setQuery(b.done());
+                    request.setUpdateModification(o);
+                    request.setUpsert();
+                    request.setFromOplogApplication(true);
+
+                    const StringData ns = op.getNss().ns();
+                    writeConflictRetry(opCtx, "applyOps_upsert", ns, [&] {
+                        WriteUnitOfWork wuow(opCtx);
+                        // If this is an atomic applyOps (i.e: `haveWrappingWriteUnitOfWork` is
+                        // true), do not timestamp the write.
+                        if (assignOperationTimestamp && timestamp != Timestamp::min()) {
+                            uassertStatusOK(opCtx->recoveryUnit()->setTimestamp(timestamp));
+                        }
+
+                        UpdateResult res = update(opCtx, db, request);
+                        if (res.numMatched == 0 && res.upserted.isEmpty()) {
+                            error() << "No document was updated even though we got a DuplicateKey "
+                                       "error when inserting";
+                            fassertFailedNoTrace(28750);
+                        }
+                        wuow.commit();
+                    });
+                }
+
+                if (incrementOpsAppliedStats) {
+                    incrementOpsAppliedStats();
                 }
             }
+            break;
+        }
+        case OpTypeEnum::kUpdate: {
+            opCounters->gotUpdate();
+            if (shouldUseGlobalOpCounters) {
+                ServerWriteConcernMetrics::get(opCtx)->recordWriteConcernForUpdate(
+                    opCtx->getWriteConcern());
+            }
 
-            // Now see if we need to do an upsert.
-            if (needToDoUpsert) {
-                // Do update on DuplicateKey errors.
-                // This will only be on the _id field in replication,
-                // since we disable non-_id unique constraint violations.
-                BSONObjBuilder b;
-                b.append(o.getField("_id"));
+            auto idField = o2["_id"];
+            uassert(ErrorCodes::NoSuchKey,
+                    str::stream() << "Failed to apply update due to missing _id: "
+                                  << redact(op.toBSON()),
+                    !idField.eoo());
 
-                UpdateRequest request(requestNss);
-                request.setQuery(b.done());
-                request.setUpdateModification(o);
-                request.setUpsert();
-                request.setFromOplogApplication(true);
+            // The o2 field may contain additional fields besides the _id (like the shard key
+            // fields), but we want to do the update by just _id so we can take advantage of the
+            // IDHACK.
+            BSONObj updateCriteria = idField.wrap();
 
-                const StringData ns = op.getNss().ns();
-                writeConflictRetry(opCtx, "applyOps_upsert", ns, [&] {
-                    WriteUnitOfWork wuow(opCtx);
-                    // If this is an atomic applyOps (i.e: `haveWrappingWriteUnitOfWork` is true),
-                    // do not timestamp the write.
-                    if (assignOperationTimestamp && timestamp != Timestamp::min()) {
-                        uassertStatusOK(opCtx->recoveryUnit()->setTimestamp(timestamp));
+            const bool upsert = alwaysUpsert || op.getUpsert().value_or(false);
+            UpdateRequest request(requestNss);
+            request.setQuery(updateCriteria);
+            request.setUpdateModification(o);
+            request.setUpsert(upsert);
+            request.setFromOplogApplication(true);
+
+            Timestamp timestamp;
+            if (assignOperationTimestamp) {
+                timestamp = op.getTimestamp();
+            }
+
+            const StringData ns = op.getNss().ns();
+            auto status = writeConflictRetry(opCtx, "applyOps_update", ns, [&] {
+                WriteUnitOfWork wuow(opCtx);
+                if (timestamp != Timestamp::min()) {
+                    uassertStatusOK(opCtx->recoveryUnit()->setTimestamp(timestamp));
+                }
+
+                UpdateResult ur = update(opCtx, db, request);
+                if (ur.numMatched == 0 && ur.upserted.isEmpty()) {
+                    if (ur.modifiers) {
+                        if (updateCriteria.nFields() == 1) {
+                            // was a simple { _id : ... } update criteria
+                            string msg = str::stream() << "failed to apply update: "
+                                                       << redact(op.toBSON());
+                            error() << msg;
+                            return Status(ErrorCodes::UpdateOperationFailed, msg);
+                        }
+
+                        // Need to check to see if it isn't present so we can exit early with a
+                        // failure. Note that adds some overhead for this extra check in some cases,
+                        // such as an updateCriteria of the form
+                        // { _id:..., { x : {$size:...} }
+                        // thus this is not ideal.
+                        if (collection == nullptr ||
+                            (indexCatalog->haveIdIndex(opCtx) &&
+                             Helpers::findById(opCtx, collection, updateCriteria).isNull()) ||
+                            // capped collections won't have an _id index
+                            (!indexCatalog->haveIdIndex(opCtx) &&
+                             Helpers::findOne(opCtx, collection, updateCriteria, false).isNull())) {
+                            string msg = str::stream() << "couldn't find doc: "
+                                                       << redact(op.toBSON());
+                            error() << msg;
+                            return Status(ErrorCodes::UpdateOperationFailed, msg);
+                        }
+
+                        // Otherwise, it's present; zero objects were updated because of additional
+                        // specifiers in the query for idempotence
+                    } else {
+                        // this could happen benignly on an oplog duplicate replay of an upsert
+                        // (because we are idempotent), if an regular non-mod update fails the item
+                        // is (presumably) missing.
+                        if (!upsert) {
+                            string msg = str::stream() << "update of non-mod failed: "
+                                                       << redact(op.toBSON());
+                            error() << msg;
+                            return Status(ErrorCodes::UpdateOperationFailed, msg);
+                        }
                     }
+                }
 
-                    UpdateResult res = update(opCtx, db, request);
-                    if (res.numMatched == 0 && res.upserted.isEmpty()) {
-                        error() << "No document was updated even though we got a DuplicateKey "
-                                   "error when inserting";
-                        fassertFailedNoTrace(28750);
-                    }
-                    wuow.commit();
-                });
+                wuow.commit();
+                return Status::OK();
+            });
+
+            if (!status.isOK()) {
+                return status;
             }
 
             if (incrementOpsAppliedStats) {
                 incrementOpsAppliedStats();
             }
+            break;
         }
-    } else if (opType == OpTypeEnum::kUpdate) {
-        opCounters->gotUpdate();
-        if (shouldUseGlobalOpCounters) {
-            ServerWriteConcernMetrics::get(opCtx)->recordWriteConcernForUpdate(
-                opCtx->getWriteConcern());
-        }
-
-        auto idField = o2["_id"];
-        uassert(ErrorCodes::NoSuchKey,
-                str::stream() << "Failed to apply update due to missing _id: "
-                              << redact(op.toBSON()),
-                !idField.eoo());
-
-        // The o2 field may contain additional fields besides the _id (like the shard key fields),
-        // but we want to do the update by just _id so we can take advantage of the IDHACK.
-        BSONObj updateCriteria = idField.wrap();
-        const bool upsert = valueB || alwaysUpsert;
-
-        UpdateRequest request(requestNss);
-        request.setQuery(updateCriteria);
-        request.setUpdateModification(o);
-        request.setUpsert(upsert);
-        request.setFromOplogApplication(true);
-
-        Timestamp timestamp;
-        if (assignOperationTimestamp) {
-            timestamp = op.getTimestamp();
-        }
-
-        const StringData ns = op.getNss().ns();
-        auto status = writeConflictRetry(opCtx, "applyOps_update", ns, [&] {
-            WriteUnitOfWork wuow(opCtx);
-            if (timestamp != Timestamp::min()) {
-                uassertStatusOK(opCtx->recoveryUnit()->setTimestamp(timestamp));
+        case OpTypeEnum::kDelete: {
+            opCounters->gotDelete();
+            if (shouldUseGlobalOpCounters) {
+                ServerWriteConcernMetrics::get(opCtx)->recordWriteConcernForDelete(
+                    opCtx->getWriteConcern());
             }
 
-            UpdateResult ur = update(opCtx, db, request);
-            if (ur.numMatched == 0 && ur.upserted.isEmpty()) {
-                if (ur.modifiers) {
-                    if (updateCriteria.nFields() == 1) {
-                        // was a simple { _id : ... } update criteria
-                        string msg = str::stream() << "failed to apply update: "
-                                                   << redact(op.toBSON());
-                        error() << msg;
-                        return Status(ErrorCodes::UpdateOperationFailed, msg);
-                    }
+            auto idField = o["_id"];
+            uassert(ErrorCodes::NoSuchKey,
+                    str::stream() << "Failed to apply delete due to missing _id: "
+                                  << redact(op.toBSON()),
+                    !idField.eoo());
 
-                    // Need to check to see if it isn't present so we can exit early with a
-                    // failure. Note that adds some overhead for this extra check in some cases,
-                    // such as an updateCriteria of the form
-                    // { _id:..., { x : {$size:...} }
-                    // thus this is not ideal.
-                    if (collection == nullptr ||
-                        (indexCatalog->haveIdIndex(opCtx) &&
-                         Helpers::findById(opCtx, collection, updateCriteria).isNull()) ||
-                        // capped collections won't have an _id index
-                        (!indexCatalog->haveIdIndex(opCtx) &&
-                         Helpers::findOne(opCtx, collection, updateCriteria, false).isNull())) {
-                        string msg = str::stream() << "couldn't find doc: " << redact(op.toBSON());
-                        error() << msg;
-                        return Status(ErrorCodes::UpdateOperationFailed, msg);
-                    }
+            // The o field may contain additional fields besides the _id (like the shard key
+            // fields), but we want to do the delete by just _id so we can take advantage of the
+            // IDHACK.
+            BSONObj deleteCriteria = idField.wrap();
 
-                    // Otherwise, it's present; zero objects were updated because of additional
-                    // specifiers in the query for idempotence
-                } else {
-                    // this could happen benignly on an oplog duplicate replay of an upsert
-                    // (because we are idempotent),
-                    // if an regular non-mod update fails the item is (presumably) missing.
-                    if (!upsert) {
-                        string msg = str::stream() << "update of non-mod failed: "
-                                                   << redact(op.toBSON());
-                        error() << msg;
-                        return Status(ErrorCodes::UpdateOperationFailed, msg);
-                    }
+            Timestamp timestamp;
+            if (assignOperationTimestamp) {
+                timestamp = op.getTimestamp();
+            }
+
+            const StringData ns = op.getNss().ns();
+            writeConflictRetry(opCtx, "applyOps_delete", ns, [&] {
+                WriteUnitOfWork wuow(opCtx);
+                if (timestamp != Timestamp::min()) {
+                    uassertStatusOK(opCtx->recoveryUnit()->setTimestamp(timestamp));
                 }
+                deleteObjects(opCtx, collection, requestNss, deleteCriteria, true /* justOne */);
+                wuow.commit();
+            });
+
+            if (incrementOpsAppliedStats) {
+                incrementOpsAppliedStats();
             }
-
-            wuow.commit();
-            return Status::OK();
-        });
-
-        if (!status.isOK()) {
-            return status;
+            break;
         }
-
-        if (incrementOpsAppliedStats) {
-            incrementOpsAppliedStats();
+        default: {
+            // Commands are processed in applyCommand_inlock().
+            invariant(false, str::stream() << "Unsupported opType " << OpType_serializer(opType));
         }
-    } else if (opType == OpTypeEnum::kDelete) {
-        opCounters->gotDelete();
-        if (shouldUseGlobalOpCounters) {
-            ServerWriteConcernMetrics::get(opCtx)->recordWriteConcernForDelete(
-                opCtx->getWriteConcern());
-        }
-
-        auto idField = o["_id"];
-        uassert(ErrorCodes::NoSuchKey,
-                str::stream() << "Failed to apply delete due to missing _id: "
-                              << redact(op.toBSON()),
-                !idField.eoo());
-
-        // The o field may contain additional fields besides the _id (like the shard key fields),
-        // but we want to do the delete by just _id so we can take advantage of the IDHACK.
-        BSONObj deleteCriteria = idField.wrap();
-
-        Timestamp timestamp;
-        if (assignOperationTimestamp) {
-            timestamp = op.getTimestamp();
-        }
-
-        const StringData ns = op.getNss().ns();
-        writeConflictRetry(opCtx, "applyOps_delete", ns, [&] {
-            WriteUnitOfWork wuow(opCtx);
-            if (timestamp != Timestamp::min()) {
-                uassertStatusOK(opCtx->recoveryUnit()->setTimestamp(timestamp));
-            }
-            deleteObjects(opCtx, collection, requestNss, deleteCriteria, true /* justOne */);
-            wuow.commit();
-        });
-
-        if (incrementOpsAppliedStats) {
-            incrementOpsAppliedStats();
-        }
-    } else {
-        // Commands are processed in applyCommand_inlock().
-        invariant(opType != OpTypeEnum::kCommand);
     }
 
     return Status::OK();

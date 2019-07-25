@@ -172,9 +172,10 @@ Status _applyOps(OperationContext* opCtx,
             if (!entry.isOK()) {
                 uasserted(ErrorCodes::AtomicityFailure,
                           str::stream()
-                              << "cannot apply a malformed operation in atomic applyops mode: "
+                              << "cannot apply a malformed operation in atomic applyOps mode: "
                               << redact(opObj)
-                              << "; will retry without atomicity");
+                              << "; will retry without atomicity: "
+                              << entry.getStatus());
             }
 
             OldClientContext ctx(opCtx, nss.ns());

@@ -33,7 +33,7 @@
 namespace mongo {
 namespace repl {
 BSONObj OplogEntryBatch::toBSON() const {
-    if (!isBatched())
+    if (!isGroupedInserts())
         return getOp().toBSON();
 
     // Since we found more than one document, create grouped insert of many docs.
