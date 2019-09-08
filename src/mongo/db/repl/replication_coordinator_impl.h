@@ -578,74 +578,35 @@ private:
         bool _killSignaled = false;
     };
 
-    // Abstract struct that holds information about clients waiting for replication.
-    // Subclasses need to define how to notify them.
     struct Waiter {
-        Waiter(OpTime _opTime, const WriteConcernOptions* _writeConcern);
-        virtual ~Waiter() = default;
-
-        BSONObj toBSON() const;
-        std::string toString() const;
-        // Controls whether or not this Waiter should stay on the WaiterList upon notification.
-        virtual bool runs_once() const = 0;
-
-        // It is invalid to call notify_inlock() unless holding ReplicationCoordinatorImpl::_mutex.
-        virtual void notify_inlock() = 0;
-
-        const OpTime opTime;
-        const WriteConcernOptions* writeConcern = nullptr;
+        Promise<void> promise;
+        boost::optional<WriteConcernOptions> writeConcern;
+        Waiter(Promise<void> p, boost::optional<WriteConcernOptions> w = boost::none)
+            : promise(std::move(p)), writeConcern(w) {}
     };
 
-    // When ThreadWaiter gets notified, it will signal the conditional variable.
-    //
-    // This is used when a thread wants to block inline until the opTime is reached with the given
-    // writeConcern.
-    struct ThreadWaiter : public Waiter {
-        ThreadWaiter(OpTime _opTime,
-                     const WriteConcernOptions* _writeConcern,
-                     stdx::condition_variable* _condVar);
-        void notify_inlock() override;
-        bool runs_once() const override {
-            return false;
-        }
-
-        stdx::condition_variable* condVar = nullptr;
-    };
-
-    // When the waiter is notified, finishCallback will be called while holding replCoord _mutex
-    // since WaiterLists are protected by _mutex.
-    //
-    // This is used when we want to run a callback when the opTime is reached.
-    struct CallbackWaiter : public Waiter {
-        using FinishFunc = std::function<void()>;
-
-        CallbackWaiter(OpTime _opTime, FinishFunc _finishCallback);
-        void notify_inlock() override;
-        bool runs_once() const override {
-            return true;
-        }
-
-        // The callback that will be called when this waiter is notified.
-        FinishFunc finishCallback = nullptr;
-    };
-
-    class WaiterGuard;
+    using WaiterType = std::shared_ptr<Waiter>;
 
     class WaiterList {
     public:
-        using WaiterType = Waiter*;
-
         // Adds waiter into the list.
-        void add_inlock(WaiterType waiter);
+        void add_inlock(const OpTime& opTime, WaiterType waiter);
+        // Adds a waiter into the list and returns the future of the waiter's promise.
+        SharedSemiFuture<void> add_inlock(const OpTime& opTime,
+                                          boost::optional<WriteConcernOptions> w = boost::none);
         // Returns whether waiter is found and removed.
         bool remove_inlock(WaiterType waiter);
-        // Signals all waiters that satisfy the condition.
-        void signalIf_inlock(std::function<bool(WaiterType)> fun);
-        // Signals all waiters from the list.
-        void signalAll_inlock();
+        // Signals all waiters whose opTime is <= the given opTime (if any) that satisfy the
+        // condition in func.
+        void setValueIf_inlock(std::function<bool(const OpTime&, WaiterType)> func,
+                               boost::optional<OpTime> opTime = boost::none);
+        // Signals all waiters from the list anf fulfills promises with OK status.
+        void setValueAll_inlock();
+        // Signals all waiters from the list anf fulfills promises with Error status.
+        void setErrorAll_inlock(Status status);
 
     private:
-        std::vector<WaiterType> _list;
+        std::multimap<OpTime, WaiterType> _list;
     };
 
     typedef std::vector<executor::TaskExecutor::CallbackHandle> HeartbeatHandles;
@@ -687,7 +648,8 @@ private:
         executor::TaskExecutor::CallbackHandle _timeoutCbh;
         // Handle to a Waiter that contains the current target optime to reach after which
         // we can exit catchup mode.
-        std::unique_ptr<CallbackWaiter> _waiter;
+        WaiterType _waiter;
+        OpTime _targetOpTime;
         // Counter for the number of ops applied during catchup.
         int _numCatchUpOps;
     };
@@ -784,7 +746,7 @@ private:
     /**
      * Helper to wake waiters in _replicationWaiterList that are doneWaitingForReplication.
      */
-    void _wakeReadyWaiters(WithLock lk);
+    void _wakeReadyWaiters(WithLock lk, boost::optional<OpTime> opTime = boost::none);
 
     /**
      * Scheduled to cause the ReplicationCoordinator to reconsider any state that might
@@ -802,10 +764,9 @@ private:
      * Helper method for _awaitReplication that takes an already locked unique_lock, but leaves
      * operation timing to the caller.
      */
-    Status _awaitReplication_inlock(stdx::unique_lock<Latch>* lock,
-                                    OperationContext* opCtx,
-                                    const OpTime& opTime,
-                                    const WriteConcernOptions& writeConcern);
+    SharedSemiFuture<void> _awaitReplication_inlock(WithLock lock,
+                                                    const OpTime& opTime,
+                                                    const WriteConcernOptions& writeConcern);
 
     /**
      * Returns an object with all of the information this node knows about the replica set's
@@ -1167,7 +1128,8 @@ private:
      * Whether the last applied or last durable op time is used depends on whether
      * the config getWriteConcernMajorityShouldJournal is set.
      */
-    void _updateLastCommittedOpTimeAndWallTime(WithLock lk);
+    void _updateLastCommittedOpTimeAndWallTime(WithLock lk,
+                                               boost::optional<OpTime> opTime = boost::none);
 
     /**
      * Callback that attempts to set the current term in topology coordinator and
@@ -1401,9 +1363,6 @@ private:
     // list of information about clients waiting for a particular opTime.
     // Does *not* own the WaiterInfos.
     WaiterList _opTimeWaiterList;  // (M)
-
-    // Waiter waiting on w:majority write availability.
-    std::unique_ptr<CallbackWaiter> _wMajorityWriteAvailabilityWaiter;  // (M)
 
     // Set to true when we are in the process of shutting down replication.
     bool _inShutdown;  // (M)
