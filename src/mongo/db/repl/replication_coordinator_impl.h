@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <map>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -581,7 +582,8 @@ private:
     struct Waiter {
         Promise<void> promise;
         boost::optional<WriteConcernOptions> writeConcern;
-        Waiter(Promise<void> p, boost::optional<WriteConcernOptions> w = boost::none)
+        Waiter(Promise<void> p) : promise(std::move(p)), writeConcern(boost::none) {}
+        Waiter(Promise<void> p, boost::optional<WriteConcernOptions> w)
             : promise(std::move(p)), writeConcern(w) {}
     };
 
@@ -598,7 +600,7 @@ private:
         bool remove_inlock(WaiterType waiter);
         // Signals all waiters whose opTime is <= the given opTime (if any) that satisfy the
         // condition in func.
-        void setValueIf_inlock(std::function<bool(const OpTime&, WaiterType)> func,
+        void setValueIf_inlock(unique_function<bool(const OpTime&, WaiterType)> func,
                                boost::optional<OpTime> opTime = boost::none);
         // Signals all waiters from the list anf fulfills promises with OK status.
         void setValueAll_inlock();
@@ -606,7 +608,8 @@ private:
         void setErrorAll_inlock(Status status);
 
     private:
-        std::multimap<OpTime, WaiterType> _list;
+        // Waiters sorted by OpTime.
+        std::multimap<OpTime, WaiterType> _waiters;
     };
 
     typedef std::vector<executor::TaskExecutor::CallbackHandle> HeartbeatHandles;

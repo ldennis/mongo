@@ -184,21 +184,21 @@ BSONObj incrementConfigVersionByRandom(BSONObj config) {
 }  // namespace
 
 void ReplicationCoordinatorImpl::WaiterList::add_inlock(const OpTime& opTime, WaiterType waiter) {
-    _list.insert(std::make_pair(opTime, waiter));
+    _waiters.emplace(opTime, waiter);
 }
 
 SharedSemiFuture<void> ReplicationCoordinatorImpl::WaiterList::add_inlock(
     const OpTime& opTime, boost::optional<WriteConcernOptions> wc) {
     auto pf = makePromiseFuture<void>();
     auto waiter = std::make_shared<Waiter>(std::move(pf.promise), std::move(wc));
-    _list.insert(std::make_pair(opTime, waiter));
+    _waiters.emplace(opTime, waiter);
     return std::move(pf.future);
 }
 
 bool ReplicationCoordinatorImpl::WaiterList::remove_inlock(WaiterType waiter) {
-    for (auto iter = _list.begin(), end = _list.end(); iter != end; iter++) {
+    for (auto iter = _waiters.begin(), end = _waiters.end(); iter != end; iter++) {
         if (iter->second == waiter) {
-            _list.erase(iter);
+            _waiters.erase(iter);
             return true;
         }
     }
@@ -206,36 +206,36 @@ bool ReplicationCoordinatorImpl::WaiterList::remove_inlock(WaiterType waiter) {
 }
 
 void ReplicationCoordinatorImpl::WaiterList::setValueIf_inlock(
-    std::function<bool(const OpTime&, WaiterType)> func, boost::optional<OpTime> opTime) {
-    for (auto curr = _list.begin(), end = _list.end();
+    unique_function<bool(const OpTime&, WaiterType)> func, boost::optional<OpTime> opTime) {
+    for (auto curr = _waiters.begin(), end = _waiters.end();
          curr != end && (!opTime || curr->first <= *opTime);) {
         auto iter = curr++;
         auto waiter = iter->second;
         try {
             if (func(iter->first, waiter)) {
                 waiter->promise.emplaceValue();
-                _list.erase(iter);
+                _waiters.erase(iter);
             }
-        } catch (...) {
-            waiter->promise.setError(exceptionToStatus());
-            _list.erase(iter);
+        } catch (const DBException& e) {
+            waiter->promise.setError(e.toStatus());
+            _waiters.erase(iter);
         }
     }
 }
 
 void ReplicationCoordinatorImpl::WaiterList::setValueAll_inlock() {
-    for (auto& [opTime, waiter] : _list) {
+    for (auto& [opTime, waiter] : _waiters) {
         waiter->promise.emplaceValue();
     }
-    _list.clear();
+    _waiters.clear();
 }
 
 void ReplicationCoordinatorImpl::WaiterList::setErrorAll_inlock(Status status) {
     invariant(!status.isOK());
-    for (auto& [opTime, waiter] : _list) {
+    for (auto& [opTime, waiter] : _waiters) {
         waiter->promise.setError(status);
     }
-    _list.clear();
+    _waiters.clear();
 }
 
 namespace {
@@ -709,10 +709,11 @@ void ReplicationCoordinatorImpl::_startDataReplication(OperationContext* opCtx,
         // InitialSyncer::startup() must be called outside lock because it uses features (eg.
         // setting the initial sync flag) which depend on the ReplicationCoordinatorImpl.
         uassertStatusOK(initialSyncerCopy->startup(opCtx, numInitialSyncAttempts.load()));
-    } catch (...) {
-        auto status = exceptionToStatus();
+    } catch (const DBException& e) {
+        auto status = e.toStatus();
         log() << "Initial Sync failed to start: " << status;
-        if (ErrorCodes::CallbackCanceled == status || ErrorCodes::isShutdownError(status.code())) {
+        if (ErrorCodes::CallbackCanceled == status.code() ||
+            ErrorCodes::isShutdownError(status.code())) {
             return;
         }
         fassertFailedWithStatusNoTrace(40354, status);
@@ -1394,8 +1395,8 @@ Status ReplicationCoordinatorImpl::_waitUntilOpTime(OperationContext* opCtx,
                 return opCtx->runWithDeadline(deadline.value_or(Date_t::max()),
                                               opCtx->getTimeoutError(),
                                               [&] { return future.getNoThrow(opCtx); });
-            } catch (...) {
-                return exceptionToStatus();
+            } catch (const DBException& e) {
+                return e.toStatus();
             }
         }();
         lock.lock();
@@ -1649,13 +1650,13 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
         try {
             return opCtx->runWithDeadline(wTimeoutDate, timeoutError, [&] {
                 return [&] {
-                    stdx::lock_guard<Latch> lock(_mutex);
+                    stdx::lock_guard lock(_mutex);
                     return _awaitReplication_inlock(lock, opTime, fixedWriteConcern);
                 }()
                            .getNoThrow(opCtx);
             });
-        } catch (...) {
-            return exceptionToStatus();
+        } catch (const DBException& e) {
+            return e.toStatus();
         }
     }();
 
@@ -1664,7 +1665,7 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
     }
 
     if (getTestCommandsEnabled() && !status.isOK()) {
-        stdx::lock_guard<Latch> lock(_mutex);
+        stdx::lock_guard lock(_mutex);
         log() << "Replication failed for write concern: " << writeConcern.toBSON()
               << ", waiting for optime: " << opTime << ", opID: " << opCtx->getOpID()
               << ", progress: " << _getReplicationProgress(lock);
@@ -1743,8 +1744,8 @@ SharedSemiFuture<void> ReplicationCoordinatorImpl::_awaitReplication_inlock(
         if (_doneWaitingForReplication_inlock(opTime, writeConcern)) {
             return Future<void>::makeReady();
         }
-    } catch (...) {
-        return Future<void>::makeReady(exceptionToStatus());
+    } catch (const DBException& e) {
+        return Future<void>::makeReady(e.toStatus());
     }
 
     return _replicationWaiterList.add_inlock(opTime, writeConcern);
@@ -2032,7 +2033,7 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
             // We ignore the case where runWithDeadline returns timeoutError because in that case
             // coming back around the loop and calling tryToStartStepDown again will cause
             // tryToStartStepDown to return ExceededTimeLimit with the proper error message.
-        } catch (...) {
+        } catch (const DBException&) {
             lk.lock();
             throw;
         }
