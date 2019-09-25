@@ -183,7 +183,8 @@ BSONObj incrementConfigVersionByRandom(BSONObj config) {
 
 }  // namespace
 
-void ReplicationCoordinatorImpl::WaiterList::add_inlock(const OpTime& opTime, WaiterType waiter) {
+void ReplicationCoordinatorImpl::WaiterList::add_inlock(const OpTime& opTime,
+                                                        SharedWaiterHandle waiter) {
     _waiters.emplace(opTime, std::move(waiter));
 }
 
@@ -194,7 +195,7 @@ SharedSemiFuture<void> ReplicationCoordinatorImpl::WaiterList::add_inlock(
     return std::move(pf.future);
 }
 
-bool ReplicationCoordinatorImpl::WaiterList::remove_inlock(WaiterType waiter) {
+bool ReplicationCoordinatorImpl::WaiterList::remove_inlock(SharedWaiterHandle waiter) {
     for (auto iter = _waiters.begin(), end = _waiters.end(); iter != end; iter++) {
         if (iter->second == waiter) {
             _waiters.erase(iter);
@@ -1166,7 +1167,7 @@ void ReplicationCoordinatorImpl::_setMyLastAppliedOpTimeAndWallTime(
 
     // Signal anyone waiting on optime changes.
     _opTimeWaiterList.setValueIf_inlock(
-        [](const OpTime& opTime, WaiterType waiter) { return true; }, opTime);
+        [](const OpTime& opTime, SharedWaiterHandle waiter) { return true; }, opTime);
 
     // Update the local snapshot before updating the stable timestamp on the storage engine. New
     // transactions reading from the local snapshot should start before the oldest timestamp is
@@ -3215,7 +3216,7 @@ ReplicationCoordinatorImpl::_setCurrentRSConfig(WithLock lk,
 
 void ReplicationCoordinatorImpl::_wakeReadyWaiters(WithLock lk, boost::optional<OpTime> opTime) {
     _replicationWaiterList.setValueIf_inlock(
-        [this](const OpTime& opTime, WaiterType waiter) {
+        [this](const OpTime& opTime, SharedWaiterHandle waiter) {
             invariant(waiter->writeConcern);
             return _doneWaitingForReplication_inlock(opTime, waiter->writeConcern.get());
         },
@@ -3922,6 +3923,12 @@ void ReplicationCoordinatorImpl::createWMajorityWriteAvailabilityDateWaiter(OpTi
         // The timeout isn't used by _doneWaitingForReplication_inlock.
         WriteConcernOptions::kNoTimeout);
     kMajorityWriteConcern = _populateUnsetWriteConcernOptionsSyncMode(lk, kMajorityWriteConcern);
+
+    if (_doneWaitingForReplication_inlock(opTime, kMajorityWriteConcern)) {
+        ReplicationMetrics::get(getServiceContext())
+            .setWMajorityWriteAvailabilityDate(_replExecutor->now());
+        return;
+    }
 
     auto opTimeCB = [this, opTime](Status status) {
         // Only setWMajorityWriteAvailabilityDate if the wait was successful.

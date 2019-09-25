@@ -587,17 +587,17 @@ private:
             : promise(std::move(p)), writeConcern(w) {}
     };
 
-    using WaiterType = std::shared_ptr<Waiter>;
+    using SharedWaiterHandle = std::shared_ptr<Waiter>;
 
     class WaiterList {
     public:
         // Adds waiter into the list.
-        void add_inlock(const OpTime& opTime, WaiterType waiter);
+        void add_inlock(const OpTime& opTime, SharedWaiterHandle waiter);
         // Adds a waiter into the list and returns the future of the waiter's promise.
         SharedSemiFuture<void> add_inlock(const OpTime& opTime,
                                           boost::optional<WriteConcernOptions> w = boost::none);
         // Returns whether waiter is found and removed.
-        bool remove_inlock(WaiterType waiter);
+        bool remove_inlock(SharedWaiterHandle waiter);
         // Signals all waiters whose opTime is <= the given opTime (if any) that satisfy the
         // condition in func.
         template <typename Func>
@@ -609,7 +609,7 @@ private:
 
     private:
         // Waiters sorted by OpTime.
-        std::multimap<OpTime, WaiterType> _waiters;
+        std::multimap<OpTime, SharedWaiterHandle> _waiters;
     };
 
     typedef std::vector<executor::TaskExecutor::CallbackHandle> HeartbeatHandles;
@@ -651,7 +651,7 @@ private:
         executor::TaskExecutor::CallbackHandle _timeoutCbh;
         // Handle to a Waiter that contains the current target optime to reach after which
         // we can exit catchup mode.
-        WaiterType _waiter;
+        SharedWaiterHandle _waiter;
         OpTime _targetOpTime;
         // Counter for the number of ops applied during catchup.
         int _numCatchUpOps;
