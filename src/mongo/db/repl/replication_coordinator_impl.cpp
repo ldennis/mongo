@@ -1651,7 +1651,7 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
             return opCtx->runWithDeadline(wTimeoutDate, timeoutError, [&] {
                 return [&] {
                     stdx::lock_guard lock(_mutex);
-                    return _awaitReplication_inlock(lock, opTime, fixedWriteConcern);
+                    return _startWaitingForReplication(lock, opTime, fixedWriteConcern);
                 }()
                            .getNoThrow(opCtx);
             });
@@ -1691,7 +1691,7 @@ BSONObj ReplicationCoordinatorImpl::_getReplicationProgress(WithLock wl) const {
     return progress.obj();
 }
 
-SharedSemiFuture<void> ReplicationCoordinatorImpl::_awaitReplication_inlock(
+SharedSemiFuture<void> ReplicationCoordinatorImpl::_startWaitingForReplication(
     WithLock wl, const OpTime& opTime, const WriteConcernOptions& writeConcern) {
 
     const Mode replMode = getReplicationMode();
@@ -1980,7 +1980,7 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
     auto waitTimeout = std::min(waitTime, stepdownTime);
     auto lastAppliedOpTime = _getMyLastAppliedOpTime_inlock();
 
-    // Set up a waiter which will be signalled when we process a heartbeat or updatePosition
+    // Set up a waiter which will be signaled when we process a heartbeat or updatePosition
     // and have a majority of nodes at our optime.
     const WriteConcernOptions waiterWriteConcern(
         WriteConcernOptions::kMajority, WriteConcernOptions::SyncMode::NONE, waitTimeout);

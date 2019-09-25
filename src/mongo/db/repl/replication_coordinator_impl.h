@@ -602,9 +602,9 @@ private:
         // condition in func.
         template <typename Func>
         void setValueIf_inlock(Func&& func, boost::optional<OpTime> opTime = boost::none);
-        // Signals all waiters from the list anf fulfills promises with OK status.
+        // Signals all waiters from the list and fulfills promises with OK status.
         void setValueAll_inlock();
-        // Signals all waiters from the list anf fulfills promises with Error status.
+        // Signals all waiters from the list and fulfills promises with Error status.
         void setErrorAll_inlock(Status status);
 
     private:
@@ -747,7 +747,8 @@ private:
                                                     int myIndex);
 
     /**
-     * Helper to wake waiters in _replicationWaiterList that are doneWaitingForReplication.
+     * Helper to wake waiters in _replicationWaiterList waiting for opTime <= the opTime passed in
+     * (or all waiters if opTime passed in is boost::none) that are doneWaitingForReplication.
      */
     void _wakeReadyWaiters(WithLock lk, boost::optional<OpTime> opTime = boost::none);
 
@@ -764,12 +765,12 @@ private:
     void _performElectionHandoff();
 
     /**
-     * Helper method for _awaitReplication that takes an already locked unique_lock, but leaves
-     * operation timing to the caller.
+     * Helper method for awaitReplication to register a waiter in _replicationWaiterList with the
+     * given opTime and writeConcern. Called while holding _mutex.
      */
-    SharedSemiFuture<void> _awaitReplication_inlock(WithLock lock,
-                                                    const OpTime& opTime,
-                                                    const WriteConcernOptions& writeConcern);
+    SharedSemiFuture<void> _startWaitingForReplication(WithLock lock,
+                                                       const OpTime& opTime,
+                                                       const WriteConcernOptions& writeConcern);
 
     /**
      * Returns an object with all of the information this node knows about the replica set's
@@ -1125,8 +1126,10 @@ private:
     /**
      * Scan the memberData and determine the highest last applied or last
      * durable optime present on a majority of servers; set _lastCommittedOpTime to this
-     * new entry.  Wake any threads waiting for replication that now have their
-     * write concern satisfied.
+     * new entry. Wake any threads waiting for replication that now have their
+     * write concern satisfied. If the opTime passed in is not boost::none, it only checks for
+     * waiters waiting for opTime <= the opTime passed in. Otherwise, it will check all waiters in
+     * the list.
      *
      * Whether the last applied or last durable op time is used depends on whether
      * the config getWriteConcernMajorityShouldJournal is set.
