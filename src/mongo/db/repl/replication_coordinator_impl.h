@@ -54,6 +54,7 @@
 #include "mongo/stdx/mutex.h"
 #include "mongo/stdx/unordered_set.h"
 #include "mongo/util/concurrency/with_lock.h"
+#include "mongo/util/future.h"
 #include "mongo/util/net/hostandport.h"
 
 namespace mongo {
@@ -582,8 +583,7 @@ private:
     struct Waiter {
         Promise<void> promise;
         boost::optional<WriteConcernOptions> writeConcern;
-        Waiter(Promise<void> p) : promise(std::move(p)), writeConcern(boost::none) {}
-        Waiter(Promise<void> p, boost::optional<WriteConcernOptions> w)
+        explicit Waiter(Promise<void> p, boost::optional<WriteConcernOptions> w = boost::none)
             : promise(std::move(p)), writeConcern(w) {}
     };
 
@@ -600,8 +600,8 @@ private:
         bool remove_inlock(WaiterType waiter);
         // Signals all waiters whose opTime is <= the given opTime (if any) that satisfy the
         // condition in func.
-        void setValueIf_inlock(unique_function<bool(const OpTime&, WaiterType)> func,
-                               boost::optional<OpTime> opTime = boost::none);
+        template <typename Func>
+        void setValueIf_inlock(Func&& func, boost::optional<OpTime> opTime = boost::none);
         // Signals all waiters from the list anf fulfills promises with OK status.
         void setValueAll_inlock();
         // Signals all waiters from the list anf fulfills promises with Error status.

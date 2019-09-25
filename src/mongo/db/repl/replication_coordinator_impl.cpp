@@ -184,14 +184,13 @@ BSONObj incrementConfigVersionByRandom(BSONObj config) {
 }  // namespace
 
 void ReplicationCoordinatorImpl::WaiterList::add_inlock(const OpTime& opTime, WaiterType waiter) {
-    _waiters.emplace(opTime, waiter);
+    _waiters.emplace(opTime, std::move(waiter));
 }
 
 SharedSemiFuture<void> ReplicationCoordinatorImpl::WaiterList::add_inlock(
     const OpTime& opTime, boost::optional<WriteConcernOptions> wc) {
     auto pf = makePromiseFuture<void>();
-    auto waiter = std::make_shared<Waiter>(std::move(pf.promise), std::move(wc));
-    _waiters.emplace(opTime, waiter);
+    _waiters.emplace(opTime, std::make_shared<Waiter>(std::move(pf.promise), std::move(wc)));
     return std::move(pf.future);
 }
 
@@ -205,8 +204,9 @@ bool ReplicationCoordinatorImpl::WaiterList::remove_inlock(WaiterType waiter) {
     return false;
 }
 
-void ReplicationCoordinatorImpl::WaiterList::setValueIf_inlock(
-    unique_function<bool(const OpTime&, WaiterType)> func, boost::optional<OpTime> opTime) {
+template <typename Func>
+void ReplicationCoordinatorImpl::WaiterList::setValueIf_inlock(Func&& func,
+                                                               boost::optional<OpTime> opTime) {
     for (auto curr = _waiters.begin(), end = _waiters.end();
          curr != end && (!opTime || curr->first <= *opTime);) {
         auto iter = curr++;
