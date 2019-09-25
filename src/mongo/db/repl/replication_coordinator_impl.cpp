@@ -1391,15 +1391,8 @@ Status ReplicationCoordinatorImpl::_waitUntilOpTime(OperationContext* opCtx,
                << targetOpTime << " until " << opCtx->getDeadline();
 
         lock.unlock();
-        auto waitStatus = [&] {
-            try {
-                return opCtx->runWithDeadline(deadline.value_or(Date_t::max()),
-                                              opCtx->getTimeoutError(),
-                                              [&] { return future.getNoThrow(opCtx); });
-            } catch (const DBException& e) {
-                return e.toStatus();
-            }
-        }();
+        auto waitStatus = future.getNoThrowWithDeadline(
+            deadline.value_or(Date_t::max()), opCtx->getTimeoutError(), opCtx);
         lock.lock();
 
         if (!waitStatus.isOK()) {
@@ -1645,21 +1638,15 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
         return clockSource->now() + clockSource->getPrecision() +
             Milliseconds{writeConcern.wTimeout};
     }();
+
     const auto deadline = opCtx->getDeadline();
     const auto timeoutError = opCtx->getTimeoutError();
-    auto status = [&] {
-        try {
-            return opCtx->runWithDeadline(wTimeoutDate, timeoutError, [&] {
-                return [&] {
-                    stdx::lock_guard lock(_mutex);
-                    return _startWaitingForReplication(lock, opTime, fixedWriteConcern);
-                }()
-                           .getNoThrow(opCtx);
-            });
-        } catch (const DBException& e) {
-            return e.toStatus();
-        }
+
+    auto future = [&] {
+        stdx::lock_guard lock(_mutex);
+        return _startWaitingForReplication(lock, opTime, fixedWriteConcern);
     }();
+    auto status = future.getNoThrowWithDeadline(wTimeoutDate, timeoutError, opCtx);
 
     if (status.code() == timeoutError && deadline >= wTimeoutDate) {
         status = Status{ErrorCodes::WriteConcernFailed, "waiting for replication timed out"};
@@ -1986,8 +1973,6 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
     const WriteConcernOptions waiterWriteConcern(
         WriteConcernOptions::kMajority, WriteConcernOptions::SyncMode::NONE, waitTimeout);
 
-    auto future = _replicationWaiterList.add_inlock(lastAppliedOpTime, waiterWriteConcern);
-
     // If attemptStepDown() succeeds, we are guaranteed that no concurrent step up or
     // step down can happen afterwards. So, it's safe to release the mutex before
     // yieldLocksForPreparedTransactions().
@@ -2025,20 +2010,22 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
             lk.lock();
         });
 
+        auto future = _replicationWaiterList.add_inlock(lastAppliedOpTime, waiterWriteConcern);
+
         lk.unlock();
-        try {
-            opCtx->runWithDeadline(std::min(stepDownUntil, waitUntil),
-                                   ErrorCodes::ExceededTimeLimit,
-                                   [&] { future.wait(opCtx); });
-        } catch (const ExceptionFor<ErrorCodes::ExceededTimeLimit>&) {
-            // We ignore the case where runWithDeadline returns timeoutError because in that case
-            // coming back around the loop and calling tryToStartStepDown again will cause
-            // tryToStartStepDown to return ExceededTimeLimit with the proper error message.
-        } catch (const DBException&) {
-            lk.lock();
-            throw;
-        }
+        auto status = future.getNoThrowWithDeadline(
+            std::min(stepDownUntil, waitUntil), ErrorCodes::ExceededTimeLimit, opCtx);
         lk.lock();
+
+        if (!status.isOK()) {
+            if (status.code() == ErrorCodes::ExceededTimeLimit) {
+                // We ignore the case where runWithDeadline returns timeoutError because in that
+                // case coming back around the loop and calling tryToStartStepDown again will cause
+                // tryToStartStepDown to return ExceededTimeLimit with the proper error message.
+            } else {
+                opCtx->checkForInterrupt();
+            }
+        }
     }
 
     // Prepare for unconditional stepdown success!
