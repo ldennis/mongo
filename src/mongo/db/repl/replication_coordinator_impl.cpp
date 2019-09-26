@@ -181,6 +181,17 @@ BSONObj incrementConfigVersionByRandom(BSONObj config) {
     return builder.obj();
 }
 
+Status futureGetNoThrowWithDeadline(OperationContext* opCtx,
+                                    SharedSemiFuture<void>& f,
+                                    Date_t deadline,
+                                    ErrorCodes::Error error) {
+    try {
+        return opCtx->runWithDeadline(deadline, error, [&] { return f.getNoThrow(opCtx); });
+    } catch (const DBException& e) {
+        return e.toStatus();
+    }
+}
+
 }  // namespace
 
 void ReplicationCoordinatorImpl::WaiterList::add_inlock(const OpTime& opTime,
@@ -1391,8 +1402,8 @@ Status ReplicationCoordinatorImpl::_waitUntilOpTime(OperationContext* opCtx,
                << targetOpTime << " until " << opCtx->getDeadline();
 
         lock.unlock();
-        auto waitStatus = future.getNoThrowWithDeadline(
-            deadline.value_or(Date_t::max()), opCtx->getTimeoutError(), opCtx);
+        auto waitStatus = futureGetNoThrowWithDeadline(
+            opCtx, future, deadline.value_or(Date_t::max()), opCtx->getTimeoutError());
         lock.lock();
 
         if (!waitStatus.isOK()) {
@@ -1646,7 +1657,7 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
         stdx::lock_guard lock(_mutex);
         return _startWaitingForReplication(lock, opTime, fixedWriteConcern);
     }();
-    auto status = future.getNoThrowWithDeadline(wTimeoutDate, timeoutError, opCtx);
+    auto status = futureGetNoThrowWithDeadline(opCtx, future, wTimeoutDate, timeoutError);
 
     if (status.code() == timeoutError && deadline >= wTimeoutDate) {
         status = Status{ErrorCodes::WriteConcernFailed, "waiting for replication timed out"};
@@ -2013,8 +2024,8 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
         auto future = _replicationWaiterList.add_inlock(lastAppliedOpTime, waiterWriteConcern);
 
         lk.unlock();
-        auto status = future.getNoThrowWithDeadline(
-            std::min(stepDownUntil, waitUntil), ErrorCodes::ExceededTimeLimit, opCtx);
+        auto status = futureGetNoThrowWithDeadline(
+            opCtx, future, std::min(stepDownUntil, waitUntil), ErrorCodes::ExceededTimeLimit);
         lk.lock();
 
         if (!status.isOK()) {

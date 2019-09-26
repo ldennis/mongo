@@ -227,32 +227,9 @@ public:
         noexcept {
         return std::move(_impl).getNoThrow(interruptible);
     }
-    StatusOrStatusWith<T> getNoThrowWithDeadline(
-        Date_t deadline,
-        ErrorCodes::Error error,
-        Interruptible* interruptible = Interruptible::notInterruptible()) &&
-        noexcept {
-        try {
-            return interruptible->runWithDeadline(
-                deadline, error, [&] { return std::move(_impl).getNoThrow(interruptible); });
-        } catch (const DBException& e) {
-            return e.toStatus();
-        }
-    }
     StatusOrStatusWith<T> getNoThrow(
         Interruptible* interruptible = Interruptible::notInterruptible()) const& noexcept {
         return _impl.getNoThrow(interruptible);
-    }
-    StatusOrStatusWith<T> getNoThrowWithDeadline(
-        Date_t deadline,
-        ErrorCodes::Error error,
-        Interruptible* interruptible = Interruptible::notInterruptible()) const& noexcept {
-        try {
-            return interruptible->runWithDeadline(
-                deadline, error, [&] { return _impl.getNoThrow(interruptible); });
-        } catch (const DBException& e) {
-            return e.toStatus();
-        }
     }
 
     /**
@@ -334,7 +311,6 @@ public:
     using SemiFuture<T>::waitNoThrow;
     using SemiFuture<T>::get;
     using SemiFuture<T>::getNoThrow;
-    using SemiFuture<T>::getNoThrowWithDeadline;
     using SemiFuture<T>::semi;
     using SemiFuture<T>::thenRunOn;
 
@@ -602,7 +578,6 @@ public:
     using SemiFuture<T>::waitNoThrow;
     using SemiFuture<T>::get;
     using SemiFuture<T>::getNoThrow;
-    using SemiFuture<T>::getNoThrowWithDeadline;
     using SemiFuture<T>::semi;
     using SemiFuture<T>::thenRunOn;
 
@@ -962,18 +937,6 @@ public:
     StatusOrStatusWith<T> getNoThrow(
         Interruptible* interruptible = Interruptible::notInterruptible()) const& noexcept {
         return _shared.getNoThrow(interruptible);
-    }
-
-    StatusOrStatusWith<T> getNoThrowWithDeadline(
-        Date_t deadline,
-        ErrorCodes::Error error,
-        Interruptible* interruptible = Interruptible::notInterruptible()) const& noexcept {
-        try {
-            return interruptible->runWithDeadline(
-                deadline, error, [&] { return _shared.getNoThrow(interruptible); });
-        } catch (const DBException& e) {
-            return e.toStatus();
-        }
     }
 
     ExecutorFuture<T> thenRunOn(ExecutorPtr exec) const noexcept {
