@@ -310,6 +310,8 @@ void WiredTigerSessionCache::waitUntilDurable(OperationContext* opCtx,
         invariantWTOK(_waitUntilDurableSession->checkpoint(_waitUntilDurableSession, nullptr));
         LOG(4) << "created checkpoint";
     }
+    // Unlock to avoid updating journal listener within the critical section.
+    lk.unlock();
     _journalListener->onDurable(token);
 }
 
