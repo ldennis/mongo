@@ -1125,16 +1125,12 @@ private:
     /**
      * Scan the memberData and determine the highest last applied or last
      * durable optime present on a majority of servers; set _lastCommittedOpTime to this
-     * new entry. Wake any threads waiting for replication that now have their
-     * write concern satisfied. If the opTime passed in is not boost::none, it only checks for
-     * waiters waiting for opTime <= the opTime passed in. Otherwise, it will check all waiters in
-     * the list.
+     * new entry.
      *
      * Whether the last applied or last durable op time is used depends on whether
      * the config getWriteConcernMajorityShouldJournal is set.
      */
-    void _updateLastCommittedOpTimeAndWallTime(WithLock lk,
-                                               boost::optional<OpTime> opTime = boost::none);
+    void _updateLastCommittedOpTimeAndWallTime(WithLock lk);
 
     /**
      * Callback that attempts to set the current term in topology coordinator and

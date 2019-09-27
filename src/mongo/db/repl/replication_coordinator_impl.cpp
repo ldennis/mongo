@@ -1172,8 +1172,10 @@ void ReplicationCoordinatorImpl::_setMyLastAppliedOpTimeAndWallTime(
         opTimeAndWallTime, _replExecutor->now(), isRollbackAllowed);
     // If we are using applied times to calculate the commit level, update it now.
     if (!_rsConfig.getWriteConcernMajorityShouldJournal()) {
-        _updateLastCommittedOpTimeAndWallTime(lk, opTimeAndWallTime.opTime);
+        _updateLastCommittedOpTimeAndWallTime(lk);
     }
+    // No need to wake up replication waiters because there should not be any replication waiters
+    // waiting on our own lastApplied.
 
     // Signal anyone waiting on optime changes.
     _opTimeWaiterList.setValueIf_inlock(
@@ -1225,8 +1227,11 @@ void ReplicationCoordinatorImpl::_setMyLastDurableOpTimeAndWallTime(
         opTimeAndWallTime, _replExecutor->now(), isRollbackAllowed);
     // If we are using durable times to calculate the commit level, update it now.
     if (_rsConfig.getWriteConcernMajorityShouldJournal()) {
-        _updateLastCommittedOpTimeAndWallTime(lk, opTimeAndWallTime.opTime);
+        _updateLastCommittedOpTimeAndWallTime(lk);
     }
+    // There could be replication waiters waiting for our lastDurable for {j: true}, wake up those
+    // that now have their write concern satisfied.
+    _wakeReadyWaiters(lk, opTimeAndWallTime.opTime);
 }
 
 OpTime ReplicationCoordinatorImpl::getMyLastAppliedOpTime() const {
@@ -1556,7 +1561,9 @@ Status ReplicationCoordinatorImpl::_setLastOptime(WithLock lk,
     const bool advancedOpTime = result.getValue();
     // Only update committed optime if the remote optimes increased.
     if (advancedOpTime) {
-        _updateLastCommittedOpTimeAndWallTime(lk, std::max(args.appliedOpTime, args.durableOpTime));
+        _updateLastCommittedOpTimeAndWallTime(lk);
+        // Wait up replication waiters on optime changes.
+        _wakeReadyWaiters(lk, std::max(args.appliedOpTime, args.durableOpTime));
     }
 
     _cancelAndRescheduleLivenessUpdate_inlock(args.memberId);
@@ -3206,6 +3213,7 @@ ReplicationCoordinatorImpl::_setCurrentRSConfig(WithLock lk,
         _startHeartbeats_inlock();
     }
     _updateLastCommittedOpTimeAndWallTime(lk);
+    _wakeReadyWaiters(lk);
 
     return action;
 }
@@ -3436,16 +3444,10 @@ bool ReplicationCoordinatorImpl::shouldChangeSyncSource(
         currentSource, replMetadata, oqMetadata, _replExecutor->now());
 }
 
-void ReplicationCoordinatorImpl::_updateLastCommittedOpTimeAndWallTime(
-    WithLock lk, boost::optional<OpTime> opTime) {
+void ReplicationCoordinatorImpl::_updateLastCommittedOpTimeAndWallTime(WithLock lk) {
     if (_topCoord->updateLastCommittedOpTimeAndWallTime()) {
         _setStableTimestampForStorage(lk);
     }
-    // Wake up any threads waiting for replication that now have their replication
-    // check satisfied.  We must do this regardless of whether we updated the lastCommittedOpTime,
-    // as lastCommittedOpTime may be based on durable optimes whereas some waiters may be
-    // waiting on applied (but not necessarily durable) optimes.
-    _wakeReadyWaiters(lk, opTime);
 }
 
 boost::optional<OpTimeAndWallTime> ReplicationCoordinatorImpl::_chooseStableOpTimeFromCandidates(
