@@ -198,8 +198,7 @@ Status waitForWriteConcern(OperationContext* opCtx,
         case WriteConcernOptions::SyncMode::JOURNAL: {
             StorageEngine* storageEngine = getGlobalServiceContext()->getStorageEngine();
             if (!storageEngine || !storageEngine->isDurable() ||
-                (writeConcernWithPopulatedSyncMode.wNumNodes <= 1 &&
-                 writeConcernWithPopulatedSyncMode.wMode.empty())) {
+                !writeConcernWithPopulatedSyncMode.shouldWaitForOtherNodes()) {
                 // Only flush inline with --nojournal or with local write concern w: 1. Otherwise,
                 // wait for lastDurable OpTime instead in awaitReplication.
                 if (replOpTime.isNull() || replOpTime > replCoord->getMyLastDurableOpTime()) {
@@ -220,8 +219,7 @@ Status waitForWriteConcern(OperationContext* opCtx,
     }
 
     // needed to avoid incrementing gleWtimeStats SERVER-9005
-    if (writeConcernWithPopulatedSyncMode.wNumNodes <= 1 &&
-        writeConcernWithPopulatedSyncMode.wMode.empty()) {
+    if (!writeConcernWithPopulatedSyncMode.shouldWaitForOtherNodes()) {
         // no desired replication check
         return Status::OK();
     }
