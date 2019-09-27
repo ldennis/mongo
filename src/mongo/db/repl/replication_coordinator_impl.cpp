@@ -207,7 +207,7 @@ SharedSemiFuture<void> ReplicationCoordinatorImpl::WaiterList::add_inlock(
 }
 
 bool ReplicationCoordinatorImpl::WaiterList::remove_inlock(SharedWaiterHandle waiter) {
-    for (auto iter = _waiters.begin(), end = _waiters.end(); iter != end; iter++) {
+    for (auto iter = _waiters.begin(); iter != _waiters.end(); iter++) {
         if (iter->second == waiter) {
             _waiters.erase(iter);
             return true;
@@ -219,18 +219,18 @@ bool ReplicationCoordinatorImpl::WaiterList::remove_inlock(SharedWaiterHandle wa
 template <typename Func>
 void ReplicationCoordinatorImpl::WaiterList::setValueIf_inlock(Func&& func,
                                                                boost::optional<OpTime> opTime) {
-    for (auto curr = _waiters.begin(), end = _waiters.end();
-         curr != end && (!opTime || curr->first <= *opTime);) {
-        auto iter = curr++;
-        auto waiter = iter->second;
+    for (auto it = _waiters.begin(); it != _waiters.end() && (!opTime || it->first <= *opTime);) {
+        const auto& waiter = it->second;
         try {
-            if (func(iter->first, waiter)) {
+            if (func(it->first, waiter)) {
                 waiter->promise.emplaceValue();
-                _waiters.erase(iter);
+                it = _waiters.erase(it);
+            } else {
+                ++it;
             }
         } catch (const DBException& e) {
             waiter->promise.setError(e.toStatus());
-            _waiters.erase(iter);
+            it = _waiters.erase(it);
         }
     }
 }
@@ -724,8 +724,7 @@ void ReplicationCoordinatorImpl::_startDataReplication(OperationContext* opCtx,
     } catch (const DBException& e) {
         auto status = e.toStatus();
         log() << "Initial Sync failed to start: " << status;
-        if (ErrorCodes::CallbackCanceled == status.code() ||
-            ErrorCodes::isShutdownError(status.code())) {
+        if (ErrorCodes::CallbackCanceled == status || ErrorCodes::isShutdownError(status.code())) {
             return;
         }
         fassertFailedWithStatusNoTrace(40354, status);
@@ -1178,7 +1177,10 @@ void ReplicationCoordinatorImpl::_setMyLastAppliedOpTimeAndWallTime(
 
     // Signal anyone waiting on optime changes.
     _opTimeWaiterList.setValueIf_inlock(
-        [](const OpTime& opTime, SharedWaiterHandle waiter) { return true; }, opTime);
+        [opTime](const OpTime& waitOpTime, const SharedWaiterHandle& waiter) {
+            return waitOpTime <= opTime;
+        },
+        opTime);
 
     // Update the local snapshot before updating the stable timestamp on the storage engine. New
     // transactions reading from the local snapshot should start before the oldest timestamp is
@@ -1627,11 +1629,7 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
 
     // We should never wait for replication if we are holding any locks, because this can
     // potentially block for long time while doing network activity.
-    if (opCtx->lockState()->isLocked()) {
-        return {Status{ErrorCodes::IllegalOperation,
-                       "Waiting for replication not allowed while holding a lock"},
-                duration_cast<Milliseconds>(timer.elapsed())};
-    }
+    invariant(!opCtx->lockState()->isLocked());
 
     auto interruptStatus = opCtx->checkForInterruptNoAssert();
     if (!interruptStatus.isOK()) {
@@ -3214,7 +3212,7 @@ ReplicationCoordinatorImpl::_setCurrentRSConfig(WithLock lk,
 
 void ReplicationCoordinatorImpl::_wakeReadyWaiters(WithLock lk, boost::optional<OpTime> opTime) {
     _replicationWaiterList.setValueIf_inlock(
-        [this](const OpTime& opTime, SharedWaiterHandle waiter) {
+        [this](const OpTime& opTime, const SharedWaiterHandle& waiter) {
             invariant(waiter->writeConcern);
             return _doneWaitingForReplication_inlock(opTime, waiter->writeConcern.get());
         },

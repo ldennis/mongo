@@ -617,8 +617,7 @@ private:
     // The state and logic of primary catchup.
     //
     // When start() is called, CatchupState will schedule the timeout callback. When we get
-    // responses of the latest heartbeats from all nodes, the target time (opTime of _waiter) is
-    // set.
+    // responses of the latest heartbeats from all nodes, the _targetOpTime is set.
     // The primary exits catchup mode when any of the following happens.
     //   1) My last applied optime reaches the target optime, if we've received a heartbeat from all
     //      nodes.
@@ -649,10 +648,10 @@ private:
         ReplicationCoordinatorImpl* _repl;  // Not owned.
         // Callback handle used to cancel a scheduled catchup timeout callback.
         executor::TaskExecutor::CallbackHandle _timeoutCbh;
-        // Handle to a Waiter that contains the current target optime to reach after which
-        // we can exit catchup mode.
-        SharedWaiterHandle _waiter;
+        // Target optime to reach after which we can exit catchup mode.
         OpTime _targetOpTime;
+        // Handle to a Waiter that waits for the _targetOpTime.
+        SharedWaiterHandle _waiter;
         // Counter for the number of ops applied during catchup.
         int _numCatchUpOps;
     };
