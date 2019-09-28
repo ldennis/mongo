@@ -196,11 +196,9 @@ Status waitForWriteConcern(OperationContext* opCtx,
             break;
         }
         case WriteConcernOptions::SyncMode::JOURNAL: {
-            StorageEngine* storageEngine = getGlobalServiceContext()->getStorageEngine();
-            if (!storageEngine || !storageEngine->isDurable() ||
-                !writeConcernWithPopulatedSyncMode.shouldWaitForOtherNodes()) {
-                // Only flush inline with --nojournal or with local write concern w: 1. Otherwise,
-                // wait for lastDurable OpTime instead in awaitReplication.
+            if (!writeConcernWithPopulatedSyncMode.shouldWaitForOtherNodes()) {
+                // Only try to flush inline with local write concern w: 1. Otherwise, wait for
+                // lastDurable OpTime instead in awaitReplication.
                 if (replOpTime.isNull() || replOpTime > replCoord->getMyLastDurableOpTime()) {
                     opCtx->recoveryUnit()->waitUntilDurable(opCtx);
                 }
