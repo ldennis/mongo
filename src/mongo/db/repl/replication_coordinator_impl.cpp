@@ -1751,6 +1751,11 @@ SharedSemiFuture<void> ReplicationCoordinatorImpl::_startWaitingForReplication(
         return Future<void>::makeReady(e.toStatus());
     }
 
+    if (_inShutdown) {
+        return Future<void>::makeReady(
+            Status{ErrorCodes::ShutdownInProgress, "Replication is being shut down"});
+    }
+
     return _replicationWaiterList.add_inlock(opTime, writeConcern);
 }
 
