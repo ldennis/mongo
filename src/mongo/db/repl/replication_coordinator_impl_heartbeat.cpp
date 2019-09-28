@@ -223,6 +223,8 @@ void ReplicationCoordinatorImpl::_handleHeartbeatResponse(
         hbStatusResponse.getValue().getState() != MemberState::RS_PRIMARY &&
         action.getAdvancedOpTime()) {
         _updateLastCommittedOpTimeAndWallTime(lk);
+        // Wait up replication waiters on optime changes.
+        _wakeReadyWaiters(lk);
     }
 
     // Abort catchup if we have caught up to the latest known optime after heartbeat refreshing.

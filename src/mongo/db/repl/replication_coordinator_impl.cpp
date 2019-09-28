@@ -1031,6 +1031,7 @@ void ReplicationCoordinatorImpl::signalDrainComplete(OperationContext* opCtx,
     // Must calculate the commit level again because firstOpTimeOfMyTerm wasn't set when we logged
     // our election in onTransitionToPrimary(), above.
     _updateLastCommittedOpTimeAndWallTime(lk);
+    _wakeReadyWaiters(lk);
 
     // Update _canAcceptNonLocalWrites
     _updateMemberStateFromTopologyCoordinator(lk, opCtx);
@@ -1529,7 +1530,6 @@ Status ReplicationCoordinatorImpl::setLastDurableOptime_forTest(long long cfgVer
         OpTime(), Date_t(), opTime, wallTime, cfgVer, memberId);
     long long configVersion;
     const auto status = _setLastOptime(lock, update, &configVersion);
-    _updateLastCommittedOpTimeAndWallTime(lock);
     return status;
 }
 
@@ -1548,7 +1548,6 @@ Status ReplicationCoordinatorImpl::setLastAppliedOptime_forTest(long long cfgVer
         opTime, wallTime, OpTime(), Date_t(), cfgVer, memberId);
     long long configVersion;
     const auto status = _setLastOptime(lock, update, &configVersion);
-    _updateLastCommittedOpTimeAndWallTime(lock);
     return status;
 }
 
