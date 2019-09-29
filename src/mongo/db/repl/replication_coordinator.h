@@ -737,6 +737,11 @@ public:
     virtual std::vector<HostAndPort> getOtherNodesInReplSet() const = 0;
 
     /**
+     * Returns the number of nodes in the replica set.
+     */
+    virtual int getNumMembers() const = 0;
+
+    /**
      * Returns a BSONObj containing a representation of the current default write concern.
      */
     virtual WriteConcernOptions getGetLastErrorDefault() = 0;

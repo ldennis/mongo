@@ -3358,6 +3358,10 @@ std::vector<HostAndPort> ReplicationCoordinatorImpl::getOtherNodesInReplSet() co
     return nodes;
 }
 
+int ReplicationCoordinatorImpl::getNumMembers() const {
+    return _rsConfig.getNumMembers();
+}
+
 Status ReplicationCoordinatorImpl::checkIfWriteConcernCanBeSatisfied(
     const WriteConcernOptions& writeConcern) const {
     stdx::lock_guard<Latch> lock(_mutex);

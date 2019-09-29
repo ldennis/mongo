@@ -225,6 +225,8 @@ public:
 
     virtual std::vector<HostAndPort> getOtherNodesInReplSet() const;
 
+    virtual int getNumMembers() const;
+
     virtual WriteConcernOptions getGetLastErrorDefault();
 
     virtual Status checkReplEnabledForCommand(BSONObjBuilder* result);

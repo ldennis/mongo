@@ -201,6 +201,8 @@ public:
 
     std::vector<HostAndPort> getOtherNodesInReplSet() const override;
 
+    int getNumMembers() const override;
+
     Status checkReplEnabledForCommand(BSONObjBuilder*) override;
 
 

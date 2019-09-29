@@ -376,6 +376,10 @@ std::vector<HostAndPort> ReplicationCoordinatorEmbedded::getOtherNodesInReplSet(
     UASSERT_NOT_IMPLEMENTED;
 }
 
+int ReplicationCoordinatorEmbedded::getNumMembers() const {
+    UASSERT_NOT_IMPLEMENTED;
+}
+
 Status ReplicationCoordinatorEmbedded::checkIfWriteConcernCanBeSatisfied(
     const WriteConcernOptions&) const {
     UASSERT_NOT_IMPLEMENTED;

@@ -194,6 +194,8 @@ public:
 
     std::vector<HostAndPort> getOtherNodesInReplSet() const final;
 
+    int getNumMembers() const final;
+
     Status checkReplEnabledForCommand(BSONObjBuilder*) final;
 
 

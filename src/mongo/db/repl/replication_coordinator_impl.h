@@ -256,6 +256,8 @@ public:
 
     virtual std::vector<HostAndPort> getOtherNodesInReplSet() const override;
 
+    virtual int getNumMembers() const override;
+
     virtual WriteConcernOptions getGetLastErrorDefault() override;
 
     virtual Status checkReplEnabledForCommand(BSONObjBuilder* result) override;

@@ -196,12 +196,18 @@ Status waitForWriteConcern(OperationContext* opCtx,
             break;
         }
         case WriteConcernOptions::SyncMode::JOURNAL: {
-            if (!writeConcernWithPopulatedSyncMode.shouldWaitForOtherNodes()) {
-                // Only try to flush inline with local write concern w: 1. Otherwise, wait for
-                // lastDurable OpTime instead in awaitReplication.
-                if (replOpTime.isNull() || replOpTime > replCoord->getMyLastDurableOpTime()) {
-                    opCtx->recoveryUnit()->waitUntilDurable(opCtx);
+            if (replCoord->getReplicationMode() != repl::ReplicationCoordinator::Mode::modeNone) {
+                if (!writeConcernWithPopulatedSyncMode.shouldWaitForOtherNodes() ||
+                    replCoord->getNumMembers() == 1) {
+                    // Only try to flush inline with local write concern w: 1 or if this is a 1-node
+                    // replica set. Otherwise, wait for lastDurable OpTime instead in
+                    // awaitReplication.
+                    if (replOpTime.isNull() || replOpTime > replCoord->getMyLastDurableOpTime()) {
+                        opCtx->recoveryUnit()->waitUntilDurable(opCtx);
+                    }
                 }
+            } else {
+                opCtx->recoveryUnit()->waitUntilDurable(opCtx);
             }
             break;
         }
