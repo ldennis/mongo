@@ -1654,7 +1654,7 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
             Milliseconds{writeConcern.wTimeout};
     }();
 
-    const auto deadline = opCtx->getDeadline();
+    const auto opCtxDeadline = opCtx->getDeadline();
     const auto timeoutError = opCtx->getTimeoutError();
 
     auto future = [&] {
@@ -1663,7 +1663,10 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
     }();
     auto status = futureGetNoThrowWithDeadline(opCtx, future, wTimeoutDate, timeoutError);
 
-    if (status.code() == timeoutError && deadline >= wTimeoutDate) {
+    // If we get a timeout error and the opCtx's initial deadline is >= the writeConcern wtimeout
+    // deadline, then we know the timeout was due to wtimeout (not opCtx timeout) and thus we return
+    // ErrorCodes::WriteConcernFailed.
+    if (status.code() == timeoutError && opCtxDeadline >= wTimeoutDate) {
         status = Status{ErrorCodes::WriteConcernFailed, "waiting for replication timed out"};
     }
 
@@ -1735,13 +1738,16 @@ SharedSemiFuture<void> ReplicationCoordinatorImpl::_startWaitingForReplication(
         return Future<void>::makeReady(stepdownStatus);
     }
 
-    if (writeConcern.wMode.empty()) {
-        if (writeConcern.wNumNodes < 1) {
+    if (!writeConcern.shouldWaitForOtherNodes() &&
+        writeConcern.syncMode != WriteConcernOptions::SyncMode::JOURNAL) {
+        if (_getMyLastAppliedOpTime_inlock() >= opTime) {
             return Future<void>::makeReady();
-        } else if (writeConcern.wNumNodes == 1 && _getMyLastAppliedOpTime_inlock() >= opTime) {
-            return Future<void>::makeReady();
+        } else {
+            return _opTimeWaiterList.add_inlock(opTime);
         }
     }
+
+    // From now on, we are either waiting for replication or local journaling.
 
     try {
         if (_doneWaitingForReplication_inlock(opTime, writeConcern)) {
@@ -2037,14 +2043,11 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
             opCtx, future, std::min(stepDownUntil, waitUntil), ErrorCodes::ExceededTimeLimit);
         lk.lock();
 
-        if (!status.isOK()) {
-            if (status.code() == ErrorCodes::ExceededTimeLimit) {
-                // We ignore the case where runWithDeadline returns timeoutError because in that
-                // case coming back around the loop and calling tryToStartStepDown again will cause
-                // tryToStartStepDown to return ExceededTimeLimit with the proper error message.
-            } else {
-                opCtx->checkForInterrupt();
-            }
+        // We ignore the case where runWithDeadline returns timeoutError because in that case
+        // coming back around the loop and calling tryToStartStepDown again will cause
+        // tryToStartStepDown to return ExceededTimeLimit with the proper error message.
+        if (!status.isOK() && status.code() != ErrorCodes::ExceededTimeLimit) {
+            opCtx->checkForInterrupt();
         }
     }
 
@@ -3919,20 +3922,13 @@ size_t ReplicationCoordinatorImpl::getNumUncommittedSnapshots() {
 void ReplicationCoordinatorImpl::createWMajorityWriteAvailabilityDateWaiter(OpTime opTime) {
     stdx::lock_guard<Latch> lk(_mutex);
 
-    WriteConcernOptions kMajorityWriteConcern(
-        WriteConcernOptions::kMajority,
-        WriteConcernOptions::SyncMode::UNSET,
-        // The timeout isn't used by _doneWaitingForReplication_inlock.
-        WriteConcernOptions::kNoTimeout);
-    kMajorityWriteConcern = _populateUnsetWriteConcernOptionsSyncMode(lk, kMajorityWriteConcern);
+    WriteConcernOptions writeConcern(WriteConcernOptions::kMajority,
+                                     WriteConcernOptions::SyncMode::UNSET,
+                                     // The timeout isn't used by _doneWaitingForReplication_inlock.
+                                     WriteConcernOptions::kNoTimeout);
+    writeConcern = _populateUnsetWriteConcernOptionsSyncMode(lk, writeConcern);
 
-    if (_doneWaitingForReplication_inlock(opTime, kMajorityWriteConcern)) {
-        ReplicationMetrics::get(getServiceContext())
-            .setWMajorityWriteAvailabilityDate(_replExecutor->now());
-        return;
-    }
-
-    auto opTimeCB = [this, opTime](Status status) {
+    auto setOpTimeCB = [this](Status status) {
         // Only setWMajorityWriteAvailabilityDate if the wait was successful.
         if (status.isOK()) {
             ReplicationMetrics::get(getServiceContext())
@@ -3940,9 +3936,15 @@ void ReplicationCoordinatorImpl::createWMajorityWriteAvailabilityDateWaiter(OpTi
         }
     };
 
+    if (_doneWaitingForReplication_inlock(opTime, writeConcern)) {
+        // Runs callback and returns early if the writeConcern is immediately satisfied.
+        setOpTimeCB(Status::OK());
+        return;
+    }
+
     auto pf = makePromiseFuture<void>();
-    auto waiter = std::make_shared<Waiter>(std::move(pf.promise), kMajorityWriteConcern);
-    auto future = std::move(pf.future).onCompletion(opTimeCB);
+    auto waiter = std::make_shared<Waiter>(std::move(pf.promise), writeConcern);
+    auto future = std::move(pf.future).onCompletion(setOpTimeCB);
     _replicationWaiterList.add_inlock(opTime, waiter);
 }
 

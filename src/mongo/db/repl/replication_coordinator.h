@@ -199,13 +199,11 @@ public:
      *     the data has been sufficiently replicated
      * ErrorCodes::ExceededTimeLimit if the opCtx->getMaxTimeMicrosRemaining is reached before
      *     the data has been sufficiently replicated
-     * ErrorCodes::PrimarySteppedDown if the node is no longer Primary/Master
+     * ErrorCodes::NotMaster if the node is not Primary/Master
      * ErrorCodes::UnknownReplWriteConcern if the writeConcern.wMode contains a write concern
      *     mode that is not known
      * ErrorCodes::ShutdownInProgress if we are mid-shutdown
      * ErrorCodes::Interrupted if the operation was killed with killop()
-     *
-     * Note: This function is intended to be called on primary only.
      */
     virtual StatusAndDuration awaitReplication(OperationContext* opCtx,
                                                const OpTime& opTime,
