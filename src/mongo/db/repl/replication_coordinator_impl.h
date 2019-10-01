@@ -1359,13 +1359,13 @@ private:
     std::unique_ptr<ReplicationCoordinatorExternalState> _externalState;  // (PS)
 
     // list of information about clients waiting on replication or lastDurable opTime.
-    // Waiters in this list are checked and notified on remote nodes' opTime updates and self
-    // lastDurable opTime updates. We do not check this list on self lastApplied opTime updates to
+    // Waiters in this list are checked and notified on remote nodes' opTime updates and self's
+    // lastDurable opTime updates. We do not check this list on self's lastApplied opTime updates to
     // avoid checking all waiters in the list on every write.
     WaiterList _replicationWaiterList;  // (M)
 
     // list of information about clients waiting for a particular lastApplied opTime.
-    // Waiters in this list are checked and notified on self lastApplied opTime updates.
+    // Waiters in this list are checked and notified on self's lastApplied opTime updates.
     WaiterList _opTimeWaiterList;  // (M)
 
     // Set to true when we are in the process of shutting down replication.

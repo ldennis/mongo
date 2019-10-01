@@ -1754,15 +1754,15 @@ SharedSemiFuture<void> ReplicationCoordinatorImpl::_startWaitingForReplication(
     if (!writeConcern.shouldWaitForOtherNodes() &&
         writeConcern.syncMode != WriteConcernOptions::SyncMode::JOURNAL) {
         // We are only waiting for our own lastApplied, add this to _opTimeWaiterList instead. This
-        // is because waiters in _replicationWaiterList are not notified on self lastApplied
+        // is because waiters in _replicationWaiterList are not notified on self's lastApplied
         // updates.
         return _opTimeWaiterList.add_inlock(opTime);
     }
 
     // From now on, we are either waiting for replication or local journaling. And waiters in
-    // _replicationWaiterList will be checked and notified on remote opTime updates and on self
-    // lastDurable updates (but not on self lastApplied updates, in which case use _opTimeWaiterList
-    // instead).
+    // _replicationWaiterList will be checked and notified on remote opTime updates and on self's
+    // lastDurable updates (but not on self's lastApplied updates, in which case use
+    // _opTimeWaiterList instead).
     return _replicationWaiterList.add_inlock(opTime, writeConcern);
 }
 
