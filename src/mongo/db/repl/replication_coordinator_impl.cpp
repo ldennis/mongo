@@ -1663,8 +1663,8 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
     }();
     auto status = futureGetNoThrowWithDeadline(opCtx, future, wTimeoutDate, timeoutError);
 
-    // If we get a timeout error and the opCtx's initial deadline is >= the writeConcern wtimeout
-    // deadline, then we know the timeout was due to wtimeout (not opCtx timeout) and thus we return
+    // If we get a timeout error and the opCtx deadline is >= the writeConcern wtimeout, then we
+    // know the timeout was due to wtimeout (not opCtx deadline) and thus we return
     // ErrorCodes::WriteConcernFailed.
     if (status.code() == timeoutError && opCtxDeadline >= wTimeoutDate) {
         status = Status{ErrorCodes::WriteConcernFailed, "waiting for replication timed out"};
@@ -1711,6 +1711,11 @@ SharedSemiFuture<void> ReplicationCoordinatorImpl::_startWaitingForReplication(
         return Future<void>::makeReady();
     }
 
+    if (_inShutdown) {
+        return Future<void>::makeReady(
+            Status{ErrorCodes::ShutdownInProgress, "Replication is being shut down"});
+    }
+
     auto checkForStepDown = [&]() -> Status {
         if (replMode == modeReplSet && !_memberState.primary()) {
             return {ErrorCodes::PrimarySteppedDown,
@@ -1738,17 +1743,6 @@ SharedSemiFuture<void> ReplicationCoordinatorImpl::_startWaitingForReplication(
         return Future<void>::makeReady(stepdownStatus);
     }
 
-    if (!writeConcern.shouldWaitForOtherNodes() &&
-        writeConcern.syncMode != WriteConcernOptions::SyncMode::JOURNAL) {
-        if (_getMyLastAppliedOpTime_inlock() >= opTime) {
-            return Future<void>::makeReady();
-        } else {
-            return _opTimeWaiterList.add_inlock(opTime);
-        }
-    }
-
-    // From now on, we are either waiting for replication or local journaling.
-
     try {
         if (_doneWaitingForReplication_inlock(opTime, writeConcern)) {
             return Future<void>::makeReady();
@@ -1757,11 +1751,18 @@ SharedSemiFuture<void> ReplicationCoordinatorImpl::_startWaitingForReplication(
         return Future<void>::makeReady(e.toStatus());
     }
 
-    if (_inShutdown) {
-        return Future<void>::makeReady(
-            Status{ErrorCodes::ShutdownInProgress, "Replication is being shut down"});
+    if (!writeConcern.shouldWaitForOtherNodes() &&
+        writeConcern.syncMode != WriteConcernOptions::SyncMode::JOURNAL) {
+        // We are only waiting for our own lastApplied, add this to _opTimeWaiterList instead. This
+        // is because waiters in _replicationWaiterList are not notified on self lastApplied
+        // updates.
+        return _opTimeWaiterList.add_inlock(opTime);
     }
 
+    // From now on, we are either waiting for replication or local journaling. And waiters in
+    // _replicationWaiterList will be checked and notified on remote opTime updates and on self
+    // lastDurable updates (but not on self lastApplied updates, in which case use _opTimeWaiterList
+    // instead).
     return _replicationWaiterList.add_inlock(opTime, writeConcern);
 }
 
