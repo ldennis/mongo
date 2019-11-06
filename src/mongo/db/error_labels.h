@@ -71,7 +71,8 @@ private:
 /**
  * Returns the error labels for the given error.
  */
-BSONObj getErrorLabels(const OperationSessionInfoFromClient& sessionOptions,
+BSONObj getErrorLabels(OperationContext* opCtx,
+                       const OperationSessionInfoFromClient& sessionOptions,
                        const std::string& commandName,
                        boost::optional<ErrorCodes::Error> code,
                        boost::optional<ErrorCodes::Error> wcCode,

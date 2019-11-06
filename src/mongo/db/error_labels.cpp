@@ -28,6 +28,7 @@
  */
 
 #include "mongo/db/error_labels.h"
+#include "mongo/db/commands.h"
 
 namespace mongo {
 
@@ -94,13 +95,22 @@ bool ErrorLabelBuilder::_isCommitOrAbort() const {
         _commandName == "abortTransaction";
 }
 
-BSONObj getErrorLabels(const OperationSessionInfoFromClient& sessionOptions,
+BSONObj getErrorLabels(OperationContext* opCtx,
+                       const OperationSessionInfoFromClient& sessionOptions,
                        const std::string& commandName,
                        boost::optional<ErrorCodes::Error> code,
                        boost::optional<ErrorCodes::Error> wcCode,
                        bool isInternalClient) {
-    BSONArrayBuilder labelArray;
+    if (MONGO_unlikely(errorLabelsOverride(opCtx))) {
+        // This command was failed by a failCommand failpoint. Thus, we return the errorLabels
+        // specified in the failpoint to supress any other error labels that would otherwise be
+        // returned by the ErrorLabelBuilder.
+        return (errorLabelsOverride(opCtx)->arrSize() > 0)
+            ? BSON("errorLabels" << errorLabelsOverride(opCtx)->arr())
+            : BSONObj();
+    }
 
+    BSONArrayBuilder labelArray;
     ErrorLabelBuilder labelBuilder(sessionOptions, commandName, code, wcCode, isInternalClient);
     labelBuilder.build(labelArray);
 

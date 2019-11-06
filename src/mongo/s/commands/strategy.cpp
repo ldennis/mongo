@@ -274,6 +274,17 @@ void execCommandClient(OperationContext* opCtx,
         failCommand.executeIf(
             [&](const BSONObj& data) {
                 result->getBodyBuilder().append(data["writeConcernError"]);
+                if (data.hasField("errorLabels")) {
+                    BSONArrayBuilder labelArray;
+                    for (auto&& errorLabel : data.getObjectField("errorLabels")) {
+                        if (errorLabel.type() == String) {
+                            labelArray << errorLabel.valueStringData();
+                        }
+                    }
+                    if (labelArray.arrSize() > 0) {
+                        result->getBodyBuilder().append("errorLabels", labelArray.arr());
+                    }
+                }
             },
             [&](const BSONObj& data) {
                 return CommandHelpers::shouldActivateFailCommandFailPoint(
@@ -629,7 +640,7 @@ void runCommand(OperationContext* opCtx,
         // isInternalClient is set to true to suppress mongos from returning the RetryableWriteError
         // label.
         auto errorLabels = getErrorLabels(
-            osi, command->getName(), e.code(), boost::none, true /* isInternalClient */);
+            opCtx, osi, command->getName(), e.code(), boost::none, true /* isInternalClient */);
         errorBuilder->appendElements(errorLabels);
         throw;
     }

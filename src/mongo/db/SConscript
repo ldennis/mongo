@@ -1336,6 +1336,7 @@ env.Library(
     ],
     LIBDEPS=[
         'logical_session_id',
+        'commands',
     ],
 )
 

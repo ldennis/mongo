@@ -471,6 +471,11 @@ constexpr StringData CommandHelpers::kHelpFieldName;
 MONGO_FAIL_POINT_DEFINE(failCommand);
 MONGO_FAIL_POINT_DEFINE(waitInCommandMarkKillOnClientDisconnect);
 
+// A decoration representing error labels specified in a failCommand failpoint that has affected a
+// command in this OperationContext.
+const OperationContext::Decoration<std::unique_ptr<BSONArrayBuilder>> errorLabelsOverride =
+    OperationContext::declareDecoration<std::unique_ptr<BSONArrayBuilder>>();
+
 bool CommandHelpers::shouldActivateFailCommandFailPoint(const BSONObj& data,
                                                         StringData cmdName,
                                                         Client* client,
@@ -515,7 +520,19 @@ void CommandHelpers::evaluateFailCommandFailPoint(OperationContext* opCtx,
     bool hasErrorCode;
     long long errorCode;
     failCommand.executeIf(
-        [&](const BSONObj&) {
+        [&](const BSONObj& data) {
+            if (data.hasField("errorLabels")) {
+                invariant(!errorLabelsOverride(opCtx));
+                // Propagate error labels specified in the failCommand failpoint to the
+                // OperationContext decoration to override getErrorLabels() behaviors.
+                errorLabelsOverride(opCtx) = std::make_unique<BSONArrayBuilder>();
+                for (auto&& errorLabel : data.getObjectField("errorLabels")) {
+                    if (errorLabel.type() == String) {
+                        errorLabelsOverride(opCtx)->append(errorLabel.valueStringData());
+                    }
+                }
+            }
+
             if (closeConnection) {
                 opCtx->getClient()->session()->end();
                 log() << "Failing command '" << commandName

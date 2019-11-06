@@ -56,6 +56,7 @@ namespace mongo {
 
 extern FailPoint failCommand;
 extern FailPoint waitInCommandMarkKillOnClientDisconnect;
+extern const OperationContext::Decoration<std::unique_ptr<BSONArrayBuilder>> errorLabelsOverride;
 
 class Command;
 class CommandInvocation;
