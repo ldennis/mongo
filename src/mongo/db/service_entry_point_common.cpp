@@ -628,16 +628,12 @@ bool runCommandImpl(OperationContext* opCtx,
                 [&](const BSONObj& data) {
                     bb.append(data["writeConcernError"]);
                     reallyWait = false;
-                    if (data.hasField("errorLabels")) {
-                        invariant(!errorLabelsOverride(opCtx));
+                    if (data.hasField("errorLabels") && data["errorLabels"].type() == Array) {
                         // Propagate error labels specified in the failCommand failpoint to the
                         // OperationContext decoration to override getErrorLabels() behaviors.
-                        errorLabelsOverride(opCtx) = std::make_unique<BSONArrayBuilder>();
-                        for (auto&& errorLabel : data.getObjectField("errorLabels")) {
-                            if (errorLabel.type() == String) {
-                                errorLabelsOverride(opCtx)->append(errorLabel.valueStringData());
-                            }
-                        }
+                        invariant(!errorLabelsOverride(opCtx));
+                        errorLabelsOverride(opCtx).emplace(
+                            data.getObjectField("errorLabels").getOwned());
                     }
                 },
                 [&](const BSONObj& data) {

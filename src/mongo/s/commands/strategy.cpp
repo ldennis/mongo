@@ -274,15 +274,10 @@ void execCommandClient(OperationContext* opCtx,
         failCommand.executeIf(
             [&](const BSONObj& data) {
                 result->getBodyBuilder().append(data["writeConcernError"]);
-                if (data.hasField("errorLabels")) {
-                    BSONArrayBuilder labelArray;
-                    for (auto&& errorLabel : data.getObjectField("errorLabels")) {
-                        if (errorLabel.type() == String) {
-                            labelArray << errorLabel.valueStringData();
-                        }
-                    }
-                    if (labelArray.arrSize() > 0) {
-                        result->getBodyBuilder().append("errorLabels", labelArray.arr());
+                if (data.hasField("errorLabels") && data["errorLabels"].type() == Array) {
+                    auto labels = data.getObjectField("errorLabels").getOwned();
+                    if (!labels.isEmpty()) {
+                        result->getBodyBuilder().append("errorLabels", BSONArray(labels));
                     }
                 }
             },

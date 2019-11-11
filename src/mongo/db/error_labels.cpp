@@ -105,9 +105,11 @@ BSONObj getErrorLabels(OperationContext* opCtx,
         // This command was failed by a failCommand failpoint. Thus, we return the errorLabels
         // specified in the failpoint to supress any other error labels that would otherwise be
         // returned by the ErrorLabelBuilder.
-        return (errorLabelsOverride(opCtx)->arrSize() > 0)
-            ? BSON("errorLabels" << errorLabelsOverride(opCtx)->arr())
-            : BSONObj();
+        if (errorLabelsOverride(opCtx).get().isEmpty()) {
+            return BSONObj();
+        } else {
+            return BSON("errorLabels" << BSONArray(errorLabelsOverride(opCtx).get()));
+        }
     }
 
     BSONArrayBuilder labelArray;

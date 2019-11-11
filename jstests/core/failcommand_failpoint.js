@@ -344,8 +344,9 @@ assert.commandWorked(adminDB.runCommand({
 }));
 res = assert.commandFailedWithCode(testDB.runCommand({ping: 1}), ErrorCodes.BadValue);
 assert.eq(res.errorLabels, ["Foo", "Bar"], res);
+assert.commandWorked(testDB.runCommand({ping: 1}));
 
-// Test failing with error labels in writeConcernError.
+// Test specifying both writeConcernError and errorLabels.
 assert.commandWorked(adminDB.runCommand({
     configureFailPoint: "failCommand",
     mode: {times: 1},
@@ -375,7 +376,7 @@ res = assert.commandFailedWithCode(testDB.runCommand({ping: 1}), ErrorCodes.BadV
 // There should be no errorLabels field if no error labels provided in failCommand.
 assert(!res.hasOwnProperty("errorLabels"));
 
-// Test failCommand with empty errorLabels in writeConcernError.
+// Test specifying both writeConcernError and empty errorLabels.
 assert.commandWorked(adminDB.runCommand({
     configureFailPoint: "failCommand",
     mode: {times: 1},
@@ -390,6 +391,19 @@ res = testDB.runCommand({insert: "c", documents: [{}]});
 assert.eq(res.writeConcernError, {code: 12345, errmsg: "hello"});
 // There should be no errorLabels field if no error labels provided in failCommand.
 assert(!res.hasOwnProperty("errorLabels"));
+
+// Test specifying errorLabels without errorCode or writeConcernError.
+assert.commandWorked(adminDB.runCommand({
+    configureFailPoint: "failCommand",
+    mode: {times: 1},
+    data: {failCommands: ["ping"], errorLabels: ["Foo", "Bar"], threadName: threadName}
+}));
+// The command should not fail if no errorCode or writeConcernError specified.
+res = assert.commandWorked(testDB.runCommand({ping: 1}));
+// As the command does not fail, there should not be any error labels even if errorLabels is
+// specified in the failCommand.
+assert(!res.hasOwnProperty("errorLabels"), res);
+assert.commandWorked(adminDB.runCommand({configureFailPoint: "failCommand", mode: "off"}));
 
 // Only run error labels override tests for replica set because the tests require retryable writes.
 // And mongos doesn't return RetryableWriteError labels.
@@ -417,7 +431,7 @@ res = assert.commandFailedWithCode(
 // Test that failCommand overrides the error label to "Foo".
 assert.eq(res.errorLabels, ["Foo"], res);
 
-// Test error labels override in writeConcernError.
+// Test error labels override while specifying writeConcernError.
 assert.commandWorked(adminDB.runCommand({
     configureFailPoint: "failCommand",
     mode: {times: 1},
@@ -452,9 +466,9 @@ res = assert.commandFailedWithCode(
         {insert: "test", documents: [{x: "retryable_write"}], txnNumber: NumberLong(0)}),
     ErrorCodes.NotMaster);
 // There should be no errorLabels field if no error labels provided in failCommand.
-assert(!res.hasOwnProperty("errorLabels"));
+assert(!res.hasOwnProperty("errorLabels"), res);
 
-// Test error labels override with empty errorLabels in writeConcernError.
+// Test error labels override with empty errorLabels while specifying writeConcernError.
 assert.commandWorked(adminDB.runCommand({
     configureFailPoint: "failCommand",
     mode: {times: 1},
@@ -470,5 +484,5 @@ res = testDB.runCommand(
     {insert: "test", documents: [{x: "retryable_write"}], txnNumber: NumberLong(0)});
 assert.eq(res.writeConcernError, {code: ErrorCodes.NotMaster, errmsg: "hello"});
 // There should be no errorLabels field if no error labels provided in failCommand.
-assert(!res.hasOwnProperty("errorLabels"));
+assert(!res.hasOwnProperty("errorLabels"), res);
 }());
