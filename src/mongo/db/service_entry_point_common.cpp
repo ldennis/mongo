@@ -628,12 +628,13 @@ bool runCommandImpl(OperationContext* opCtx,
                 [&](const BSONObj& data) {
                     bb.append(data["writeConcernError"]);
                     reallyWait = false;
-                    if (data.hasField("errorLabels") && data["errorLabels"].type() == Array) {
+                    if (data.hasField(kErrorLabelsFieldName) &&
+                        data[kErrorLabelsFieldName].type() == Array) {
                         // Propagate error labels specified in the failCommand failpoint to the
                         // OperationContext decoration to override getErrorLabels() behaviors.
                         invariant(!errorLabelsOverride(opCtx));
                         errorLabelsOverride(opCtx).emplace(
-                            data.getObjectField("errorLabels").getOwned());
+                            data.getObjectField(kErrorLabelsFieldName).getOwned());
                     }
                 },
                 [&](const BSONObj& data) {

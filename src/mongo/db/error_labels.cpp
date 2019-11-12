@@ -108,7 +108,7 @@ BSONObj getErrorLabels(OperationContext* opCtx,
         if (errorLabelsOverride(opCtx).get().isEmpty()) {
             return BSONObj();
         } else {
-            return BSON("errorLabels" << BSONArray(errorLabelsOverride(opCtx).get()));
+            return BSON(kErrorLabelsFieldName << errorLabelsOverride(opCtx).get());
         }
     }
 
@@ -116,7 +116,7 @@ BSONObj getErrorLabels(OperationContext* opCtx,
     ErrorLabelBuilder labelBuilder(sessionOptions, commandName, code, wcCode, isInternalClient);
     labelBuilder.build(labelArray);
 
-    return (labelArray.arrSize() > 0) ? BSON("errorLabels" << labelArray.arr()) : BSONObj();
+    return (labelArray.arrSize() > 0) ? BSON(kErrorLabelsFieldName << labelArray.arr()) : BSONObj();
 }
 
 bool isTransientTransactionError(ErrorCodes::Error code,

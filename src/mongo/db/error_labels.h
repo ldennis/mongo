@@ -32,7 +32,7 @@
 #include "mongo/db/logical_session_id.h"
 
 namespace mongo {
-
+static constexpr StringData kErrorLabelsFieldName = "errorLabels"_sd;
 namespace ErrorLabel {
 // PLEASE CONSULT DRIVERS BEFORE ADDING NEW ERROR LABELS.
 static constexpr StringData kTransientTransaction = "TransientTransactionError"_sd;

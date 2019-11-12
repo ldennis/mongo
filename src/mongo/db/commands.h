@@ -56,7 +56,7 @@ namespace mongo {
 
 extern FailPoint failCommand;
 extern FailPoint waitInCommandMarkKillOnClientDisconnect;
-extern const OperationContext::Decoration<boost::optional<BSONObj>> errorLabelsOverride;
+extern const OperationContext::Decoration<boost::optional<BSONArray>> errorLabelsOverride;
 
 class Command;
 class CommandInvocation;
