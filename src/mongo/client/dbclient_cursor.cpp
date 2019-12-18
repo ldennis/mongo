@@ -131,6 +131,14 @@ Message DBClientCursor::_assembleInit() {
                 // Legacy queries don't handle readOnce.
                 qr.getValue()->setReadOnce(true);
             }
+            if (auto replTerm = query[QueryRequest::kTermField]) {
+                // Legacy queries don't handle term.
+                qr.getValue()->setReplicationTerm(replTerm.numberLong());
+            }
+            if (auto readConcern = query[repl::ReadConcernArgs::kReadConcernFieldName]) {
+                // Legacy queries don't handle readConcern.
+                qr.getValue()->setReadConcern(readConcern.Obj());
+            }
             BSONObj cmd = _nsOrUuid.uuid() ? qr.getValue()->asFindCommandWithUuid()
                                            : qr.getValue()->asFindCommand();
             if (auto readPref = query["$readPreference"]) {
@@ -165,7 +173,7 @@ Message DBClientCursor::_assembleGetMore() {
                                   boost::make_optional(tailableAwaitData(),
                                                        _awaitDataTimeout),  // awaitDataTimeout
                                   boost::none,                              // term
-                                  boost::none);  // lastKnownCommittedOptime
+                                  _lastKnownCommittedOpTime);
         auto msg = assembleCommandRequest(_client, ns.db(), opts, gmr.toBSON());
         // Set the exhaust flag if needed.
         if (opts & QueryOption_Exhaust && msg.operation() == dbMsg) {

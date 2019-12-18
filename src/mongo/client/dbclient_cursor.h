@@ -235,6 +235,11 @@ public:
         _awaitDataTimeout = timeout;
     }
 
+    void setLastKnownCommittedOpTime(boost::optional<repl::OpTime> lastCommittedOpTime) {
+        invariant(tailableAwaitData());
+        _lastKnownCommittedOpTime = std::move(lastCommittedOpTime);
+    }
+
 protected:
     struct Batch {
         // TODO remove constructors after c++17 toolchain upgrade
@@ -288,6 +293,7 @@ private:
     bool _connectionHasPendingReplies = false;
     int _lastRequestId = 0;
     Milliseconds _awaitDataTimeout = Milliseconds{0};
+    boost::optional<repl::OpTime> _lastKnownCommittedOpTime;
 
     void dataReceived(const Message& reply) {
         bool retry;
