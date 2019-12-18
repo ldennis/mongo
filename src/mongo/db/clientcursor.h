@@ -306,6 +306,24 @@ public:
         _leftoverMaxTimeMicros = leftoverMaxTimeMicros;
     }
 
+    //
+    // Oplog Fetching
+    //
+
+    /**
+     * Returns the commit point at which the last batch was returned.
+     */
+    boost::optional<repl::OpTime> getLastKnownCommittedOpTime() const {
+        return _lastKnownCommittedOpTime;
+    }
+
+    /**
+     * Sets the commit point at which the latest batch is returned.
+     */
+    void setLastKnownCommittedOpTime(boost::optional<repl::OpTime> lastCommittedOpTime) {
+        _lastKnownCommittedOpTime = std::move(lastCommittedOpTime);
+    }
+
     /**
      * Returns the server-wide the count of living cursors. Such a cursor is called an "open
      * cursor".
@@ -443,6 +461,10 @@ private:
 
     // A string with the plan summary of the cursor's query.
     std::string _planSummary;
+
+    // Commit point at which the last batch was returned. This is only used by internal exhaust
+    // oplog fetching. Also see lastKnownCommittedOpTime in GetMoreRequest.
+    boost::optional<repl::OpTime> _lastKnownCommittedOpTime;
 };
 
 /**

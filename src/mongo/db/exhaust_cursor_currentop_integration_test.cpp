@@ -97,6 +97,7 @@ void setWaitBeforeUnpinningOrDeletingCursorAfterGetMoreBatchFailpoint(DBClientBa
 bool confirmCurrentOpContents(DBClientBase* conn,
                               BSONObj curOpMatch,
                               bool expectEmptyResult = false,
+                              std::vector<BSONObj>* results = nullptr,
                               Milliseconds timeoutMS = Milliseconds(5 * 60 * 1000),
                               Milliseconds intervalMS = Milliseconds(200)) {
     auto curOpCmd = BSON("aggregate" << 1 << "cursor" << BSONObj() << "pipeline"
@@ -107,7 +108,13 @@ bool confirmCurrentOpContents(DBClientBase* conn,
         auto reply = conn->runCommand(OpMsgRequest::fromDBAndBody("admin", curOpCmd));
         auto swCursorRes = CursorResponse::parseFromBSON(reply->getCommandReply());
         ASSERT_OK(swCursorRes.getStatus());
-        if (swCursorRes.getValue().getBatch().empty() == expectEmptyResult) {
+        auto ops = swCursorRes.getValue().getBatch();
+        if (ops.empty() == expectEmptyResult) {
+            if (!expectEmptyResult && results) {
+                for (auto op : ops) {
+                    results->push_back(op.getOwned());
+                }
+            }
             return true;
         }
         sleepFor(intervalMS);
@@ -117,13 +124,17 @@ bool confirmCurrentOpContents(DBClientBase* conn,
 
 // Start an exhaust request with a batchSize of 2 in the initial 'find' and a batchSize of 1 in
 // subsequent 'getMore's.
-auto startExhaustQuery(DBClientBase* queryConnection,
-                       std::unique_ptr<DBClientCursor>& queryCursor) {
+auto startExhaustQuery(
+    DBClientBase* queryConnection,
+    std::unique_ptr<DBClientCursor>& queryCursor,
+    int queryOptions = QueryOption_Exhaust,
+    Milliseconds awaitDataTimeoutMS = Milliseconds(5000),
+    const boost::optional<repl::OpTime>& lastKnownCommittedOpTime = boost::none) {
     auto queryThread = stdx::async(stdx::launch::async, [&] {
         const auto projSpec = BSON("_id" << 0 << "a" << 1);
         // Issue the initial 'find' with a batchSize of 2 and the exhaust flag set. We then iterate
         // through the first batch and confirm that the results are as expected.
-        queryCursor = queryConnection->query(testNSS, {}, 0, 0, &projSpec, QueryOption_Exhaust, 2);
+        queryCursor = queryConnection->query(testNSS, {}, 0, 0, &projSpec, queryOptions, 2);
         for (int i = 0; i < 2; ++i) {
             ASSERT_BSONOBJ_EQ(queryCursor->nextSafe(), BSON("a" << i));
         }
@@ -133,6 +144,14 @@ auto startExhaustQuery(DBClientBase* queryConnection,
         // until the cursor is exhausted, without the client sending any further getMore requests.
         // We expect this request to hang at the 'waitWithPinnedCursorDuringGetMoreBatch' failpoint.
         queryCursor->setBatchSize(1);
+        if ((queryOptions & QueryOption_CursorTailable) && (queryOptions & QueryOption_AwaitData)) {
+            queryCursor->setAwaitDataTimeoutMS(awaitDataTimeoutMS);
+            if (lastKnownCommittedOpTime) {
+                auto term = lastKnownCommittedOpTime.get().getTerm();
+                queryCursor->setCurrentTermAndLastCommittedOpTime_forTesting(
+                    term, lastKnownCommittedOpTime);
+            }
+        }
         ASSERT(queryCursor->more());
     });
 
@@ -300,5 +319,67 @@ TEST(CurrentOpExhaustCursorTest, InterruptExhaustCursorPseudoGetMoreOnClientDisc
 TEST(CurrentOpExhaustCursorTest, CleanupExhaustCursorOnBrokenPipe) {
     // Test that exhaust cursor is cleaned up on broken pipe even if the exhaust getMore succeeded.
     testClientDisconnect(true /* disconnectAfterGetMoreBatch */);
+}
+
+TEST(CurrentOpExhaustCursorTest, ExhaustCursorUpdatesLastKnownCommittedOpTime) {
+    auto conn = connect();
+
+    // We need to test the lastKnownCommittedOpTime in exhaust getMore requests. So we need a
+    // replica set.
+    if (!conn->isReplicaSetMember()) {
+        return;
+    }
+
+    conn->dropCollection(testNSS.ns());
+    // Create a cap collection to run tailable awaitData queries on.
+    conn->createCollection(testNSS.ns(), 1024, true, 10);
+    // Insert initial records into the cap collection.
+    for (int i = 0; i < 5; i++) {
+        auto insertCmd =
+            BSON("insert" << testNSS.coll() << "documents" << BSON_ARRAY(BSON("a" << i)));
+        auto reply = conn->runCommand(OpMsgRequest::fromDBAndBody(testNSS.db(), insertCmd));
+        ASSERT_OK(getStatusFromCommandResult(reply->getCommandReply()));
+    }
+
+    const auto queryConnection = connect(testBackgroundAppName);
+    std::unique_ptr<DBClientCursor> queryCursor;
+
+    // Initiate a tailable awaitData exhaust cursor.
+    auto queryThread =
+        startExhaustQuery(queryConnection.get(),
+                          queryCursor,
+                          QueryOption_Exhaust | QueryOption_CursorTailable | QueryOption_AwaitData,
+                          Milliseconds(60 * 1000),            // awaitData timeout
+                          repl::OpTime(Timestamp(1, 0), 1));  // lastKnownCommittedOpTime
+    ON_BLOCK_EXIT([&conn, &queryThread] { queryThread.wait(); });
+
+    // Get the cursor's lastKnownCommittedTimestamp at which the cursor awaits insert data.
+    auto curOpMatch = BSON("command.collection"
+                           << testNSS.coll() << "command.getMore" << queryCursor->getCursorId()
+                           << "cursor.lastKnownCommittedTimestamp" << BSON("$exists" << true));
+    std::vector<BSONObj> results;
+    ASSERT(
+        confirmCurrentOpContents(conn.get(), curOpMatch, false /* expectEmptyResult */, &results));
+    ASSERT_EQ(1, results.size());
+    auto lastKnownCommittedTimestamp =
+        results[0]["cursor"]["lastKnownCommittedTimestamp"].timestamp();
+    unittest::log() << "Got initial lastKnownCommittedTimestamp " << lastKnownCommittedTimestamp;
+
+    // Inserting more records to unblock awaitData and advance the commit point.
+    for (int i = 5; i < 8; i++) {
+        auto insertCmd =
+            BSON("insert" << testNSS.coll() << "documents" << BSON_ARRAY(BSON("a" << i)));
+        auto reply = conn->runCommand(OpMsgRequest::fromDBAndBody(testNSS.db(), insertCmd));
+        ASSERT_OK(getStatusFromCommandResult(reply->getCommandReply()));
+    }
+
+    // Test that the cursor's lastKnownCommittedTimestamp is advanced after return new batches.
+    curOpMatch = BSON("command.collection" << testNSS.coll() << "command.getMore"
+                                           << queryCursor->getCursorId()
+                                           << "cursor.lastKnownCommittedTimestamp"
+                                           << BSON("$gt" << lastKnownCommittedTimestamp));
+    unittest::log() << "Waiting for cursor's lastKnownCommittedTimestamp to be past "
+                    << lastKnownCommittedTimestamp;
+    ASSERT(confirmCurrentOpContents(conn.get(), curOpMatch));
 }
 }  // namespace mongo

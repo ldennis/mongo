@@ -245,6 +245,16 @@ public:
         _lastKnownCommittedOpTime = lastCommittedOpTime;
     }
 
+    // Same as setCurrentTermAndLastCommittedOpTime but can be used for non-oplog requests for
+    // testing purposes.
+    void setCurrentTermAndLastCommittedOpTime_forTesting(
+        const boost::optional<long long>& term,
+        const boost::optional<repl::OpTime>& lastCommittedOpTime) {
+        invariant(tailableAwaitData());
+        _term = term;
+        _lastKnownCommittedOpTime = lastCommittedOpTime;
+    }
+
 protected:
     struct Batch {
         // TODO remove constructors after c++17 toolchain upgrade
