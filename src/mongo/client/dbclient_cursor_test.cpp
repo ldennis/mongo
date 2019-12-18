@@ -808,7 +808,7 @@ TEST_F(DBClientCursorTest, DBClientCursorOplogQuery) {
     cursor.setAwaitDataTimeoutMS(Milliseconds{5000});
     ASSERT_EQ(cursor.getAwaitDataTimeoutMS(), Milliseconds{5000});
 
-    cursor.setLastKnownCommittedOpTime(repl::OpTime(Timestamp(123, 4), term));
+    cursor.setCurrentTermAndLastCommittedOpTime(term, repl::OpTime(Timestamp(123, 4), term));
 
     // --- Test 2 ---
     // Create a 'getMore' response with two documents and set it as the mock response.
@@ -822,14 +822,17 @@ TEST_F(DBClientCursorTest, DBClientCursorOplogQuery) {
     m = conn.getLastSentMessage();
     ASSERT_FALSE(m.empty());
     msg = OpMsg::parse(m);
-    ASSERT_EQ(StringData(msg.body.firstElement().fieldName()), "getMore");
-    ASSERT_EQ(msg.body["getMore"].type(), BSONType::NumberLong);
-    ASSERT_EQ(msg.body["getMore"].numberLong(), cursorId);
+    ASSERT_EQ(StringData(msg.body.firstElement().fieldName()), "getMore") << msg.body;
+    ASSERT_EQ(msg.body["getMore"].type(), BSONType::NumberLong) << msg.body;
+    ASSERT_EQ(msg.body["getMore"].numberLong(), cursorId) << msg.body;
     // Make sure the correct awaitData timeout is sent.
-    ASSERT_EQ(msg.body["maxTimeMS"].number(), 5000);
+    ASSERT_EQ(msg.body["maxTimeMS"].number(), 5000) << msg.body;
+    // Make sure the correct term is sent.
+    ASSERT_EQ(msg.body["term"].numberLong(), term) << msg.body;
     // Make sure the correct lastKnownCommittedOpTime is sent.
-    ASSERT_EQ(msg.body["lastKnownCommittedOpTime"]["ts"].timestamp(), Timestamp(123, 4));
-    ASSERT_EQ(msg.body["lastKnownCommittedOpTime"]["t"].numberLong(), term);
+    ASSERT_EQ(msg.body["lastKnownCommittedOpTime"]["ts"].timestamp(), Timestamp(123, 4))
+        << msg.body;
+    ASSERT_EQ(msg.body["lastKnownCommittedOpTime"]["t"].numberLong(), term) << msg.body;
     ASSERT_BSONOBJ_EQ(docObj(1), cursor.next());
     ASSERT_BSONOBJ_EQ(docObj(2), cursor.next());
     ASSERT_FALSE(cursor.moreInCurrentBatch());

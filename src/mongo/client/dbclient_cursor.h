@@ -235,9 +235,14 @@ public:
         _awaitDataTimeout = timeout;
     }
 
-    void setLastKnownCommittedOpTime(boost::optional<repl::OpTime> lastCommittedOpTime) {
+    // Only used for tailable awaitData oplog fetching requests.
+    void setCurrentTermAndLastCommittedOpTime(
+        const boost::optional<long long>& term,
+        const boost::optional<repl::OpTime>& lastCommittedOpTime) {
         invariant(tailableAwaitData());
-        _lastKnownCommittedOpTime = std::move(lastCommittedOpTime);
+        invariant(ns == NamespaceString::kRsOplogNamespace);
+        _term = term;
+        _lastKnownCommittedOpTime = lastCommittedOpTime;
     }
 
 protected:
@@ -293,6 +298,7 @@ private:
     bool _connectionHasPendingReplies = false;
     int _lastRequestId = 0;
     Milliseconds _awaitDataTimeout = Milliseconds{0};
+    boost::optional<long long> _term;
     boost::optional<repl::OpTime> _lastKnownCommittedOpTime;
 
     void dataReceived(const Message& reply) {

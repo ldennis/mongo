@@ -172,7 +172,7 @@ Message DBClientCursor::_assembleGetMore() {
                                   boost::make_optional(batchSize != 0, batchSize),
                                   boost::make_optional(tailableAwaitData(),
                                                        _awaitDataTimeout),  // awaitDataTimeout
-                                  boost::none,                              // term
+                                  _term,
                                   _lastKnownCommittedOpTime);
         auto msg = assembleCommandRequest(_client, ns.db(), opts, gmr.toBSON());
         // Set the exhaust flag if needed.
