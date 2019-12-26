@@ -78,8 +78,6 @@ void ReplClientInfo::setLastOpToSystemLastOpTime(OperationContext* opCtx) {
                   << systemOpTime;
         } else {
             systemOpTime = OpTime(sw.getValue(), replCoord->getTerm());
-            log() << "Using LatestOplogTimestamp as system optime for this client " << systemOpTime
-                  << " last applied is " << replCoord->getMyLastAppliedOpTime();
         }
 
         // If the system optime has gone backwards, that must mean that there was a rollback.
