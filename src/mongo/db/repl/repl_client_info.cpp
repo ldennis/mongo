@@ -69,7 +69,23 @@ void ReplClientInfo::setLastOp(OperationContext* opCtx, const OpTime& ot) {
 void ReplClientInfo::setLastOpToSystemLastOpTime(OperationContext* opCtx) {
     auto replCoord = repl::ReplicationCoordinator::get(opCtx->getServiceContext());
     if (replCoord->isReplEnabled() && opCtx->writesAreReplicated()) {
-        auto systemOpTime = replCoord->getMyLastAppliedOpTime();
+        auto sw = replCoord->getLatestOplogTimestamp(opCtx);
+        OpTime systemOpTime;
+        if (!sw.isOK()) {
+            systemOpTime = replCoord->getMyLastAppliedOpTime();
+            log() << sw.getStatus()
+                  << " Using in-memory last applied optime as system optime for this client "
+                  << systemOpTime;
+            invariant(ErrorCodes::isInterruption(sw.getStatus()) ||
+                      sw.getStatus() == ErrorCodes::TransactionCoordinatorSteppingDown ||
+                      sw.getStatus() == ErrorCodes::NamespaceNotFound ||
+                      sw.getStatus() == ErrorCodes::OplogOperationUnsupported ||
+                      sw.getStatus() == ErrorCodes::CollectionIsEmpty);
+        } else {
+            systemOpTime = OpTime(sw.getValue(), replCoord->getTerm());
+            log() << "Using LatestOplogTimestamp as system optime for this client " << systemOpTime
+                  << " last applied is " << replCoord->getMyLastAppliedOpTime();
+        }
 
         // If the system optime has gone backwards, that must mean that there was a rollback.
         // This is safe, but the last op for a Client should never go backwards, so just leave

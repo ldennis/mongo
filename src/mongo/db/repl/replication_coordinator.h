@@ -953,6 +953,14 @@ public:
         RaftMongoSpecActionEnum action,
         boost::optional<Timestamp> oplogReadTimestamp = boost::none) const {}
 
+    /**
+     * Returns the timestamp of lastest oplog entry if supported by the storage engine.
+     */
+    virtual StatusWith<Timestamp> getLatestOplogTimestamp(OperationContext* opCtx) const noexcept {
+        return Status(ErrorCodes::OplogOperationUnsupported,
+                      "Getting the latest oplog timestamp not supported.");
+    };
+
 protected:
     ReplicationCoordinator();
 };
