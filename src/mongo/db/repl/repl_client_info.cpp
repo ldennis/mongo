@@ -76,11 +76,6 @@ void ReplClientInfo::setLastOpToSystemLastOpTime(OperationContext* opCtx) {
             log() << sw.getStatus()
                   << " Using in-memory last applied optime as system optime for this client "
                   << systemOpTime;
-            invariant(ErrorCodes::isInterruption(sw.getStatus()) ||
-                      sw.getStatus() == ErrorCodes::TransactionCoordinatorSteppingDown ||
-                      sw.getStatus() == ErrorCodes::NamespaceNotFound ||
-                      sw.getStatus() == ErrorCodes::OplogOperationUnsupported ||
-                      sw.getStatus() == ErrorCodes::CollectionIsEmpty);
         } else {
             systemOpTime = OpTime(sw.getValue(), replCoord->getTerm());
             log() << "Using LatestOplogTimestamp as system optime for this client " << systemOpTime
