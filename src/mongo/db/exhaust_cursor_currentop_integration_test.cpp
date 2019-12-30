@@ -331,9 +331,12 @@ TEST(CurrentOpExhaustCursorTest, ExhaustCursorUpdatesLastKnownCommittedOpTime) {
     }
 
     conn->dropCollection(testNSS.ns());
-    // Create a cap collection to run tailable awaitData queries on.
-    conn->createCollection(testNSS.ns(), 1024, true, 10);
-    // Insert initial records into the cap collection.
+    // Create a capped collection to run tailable awaitData queries on.
+    conn->createCollection(testNSS.ns(),
+                           1024 /* size of collection */,
+                           true /* capped */,
+                           10 /* max number of objects */);
+    // Insert initial records into the capped collection.
     for (int i = 0; i < 5; i++) {
         auto insertCmd =
             BSON("insert" << testNSS.coll() << "documents" << BSON_ARRAY(BSON("a" << i)));
