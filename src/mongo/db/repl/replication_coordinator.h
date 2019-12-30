@@ -954,7 +954,7 @@ public:
         boost::optional<Timestamp> oplogReadTimestamp = boost::none) const {}
 
     /**
-     * Returns the timestamp of lastest oplog entry if supported by the storage engine.
+     * Returns the timestamp of latest oplog entry if supported by the storage engine.
      */
     virtual StatusWith<Timestamp> getLatestOplogTimestamp(OperationContext* opCtx) const noexcept {
         return Status(ErrorCodes::OplogOperationUnsupported,

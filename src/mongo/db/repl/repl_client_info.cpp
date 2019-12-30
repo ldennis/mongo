@@ -73,9 +73,9 @@ void ReplClientInfo::setLastOpToSystemLastOpTime(OperationContext* opCtx) {
         OpTime systemOpTime;
         if (!sw.isOK()) {
             systemOpTime = replCoord->getMyLastAppliedOpTime();
-            log() << sw.getStatus()
-                  << " Using in-memory last applied optime as system optime for this client "
-                  << systemOpTime;
+            LOG(2) << "Failed to get latest oplog timestamp: " << sw.getStatus()
+                   << " Using in-memory last applied optime " << systemOpTime
+                   << " as the system optime for this client.";
         } else {
             systemOpTime = OpTime(sw.getValue(), replCoord->getTerm());
         }
