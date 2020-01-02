@@ -94,6 +94,7 @@ structs:
         type: long
         optional: true
       lastKnownCommittedOpTime:
-        description: The commit point known by the server at the time when the last batch was returned.
+        description: "The commit point known by the server at the time when the last batch was
+                      returned."
         type: optime
         optional: true
