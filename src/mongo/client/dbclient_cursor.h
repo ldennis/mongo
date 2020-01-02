@@ -240,17 +240,6 @@ public:
         const boost::optional<long long>& term,
         const boost::optional<repl::OpTime>& lastCommittedOpTime) {
         invariant(tailableAwaitData());
-        invariant(ns == NamespaceString::kRsOplogNamespace);
-        _term = term;
-        _lastKnownCommittedOpTime = lastCommittedOpTime;
-    }
-
-    // Same as setCurrentTermAndLastCommittedOpTime but can be used for non-oplog requests for
-    // testing purposes.
-    void setCurrentTermAndLastCommittedOpTime_forTesting(
-        const boost::optional<long long>& term,
-        const boost::optional<repl::OpTime>& lastCommittedOpTime) {
-        invariant(tailableAwaitData());
         _term = term;
         _lastKnownCommittedOpTime = lastCommittedOpTime;
     }

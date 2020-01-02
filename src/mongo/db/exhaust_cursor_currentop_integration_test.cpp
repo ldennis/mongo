@@ -148,8 +148,7 @@ auto startExhaustQuery(
             queryCursor->setAwaitDataTimeoutMS(awaitDataTimeoutMS);
             if (lastKnownCommittedOpTime) {
                 auto term = lastKnownCommittedOpTime.get().getTerm();
-                queryCursor->setCurrentTermAndLastCommittedOpTime_forTesting(
-                    term, lastKnownCommittedOpTime);
+                queryCursor->setCurrentTermAndLastCommittedOpTime(term, lastKnownCommittedOpTime);
             }
         }
         ASSERT(queryCursor->more());
