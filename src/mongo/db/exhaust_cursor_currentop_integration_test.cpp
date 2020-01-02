@@ -108,7 +108,6 @@ bool confirmCurrentOpContents(DBClientBase* conn,
         auto reply = conn->runCommand(OpMsgRequest::fromDBAndBody("admin", curOpCmd));
         auto swCursorRes = CursorResponse::parseFromBSON(reply->getCommandReply());
         ASSERT_OK(swCursorRes.getStatus());
-        auto ops = swCursorRes.getValue().getBatch();
         if (swCursorRes.getValue().getBatch().empty() == expectEmptyResult) {
             return true;
         }
