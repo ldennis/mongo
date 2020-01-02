@@ -3,6 +3,8 @@
 // while a tailable awaitData query is running. See SERVER-35239. This also tests that when the
 // client's lastKnownCommittedOpTime is behind the node's lastCommittedOpTime, getMore returns early
 // with an empty batch.
+//
+// @tags: [requires_fcv_44]
 
 (function() {
 'use strict';
