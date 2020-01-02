@@ -36,6 +36,7 @@ global:
 imports:
   - "mongo/db/logical_session_id.idl"
   - "mongo/idl/basic_types.idl"
+  - "mongo/db/repl/replication_types.idl"
 
 structs:
   GenericCursor:
@@ -92,11 +93,7 @@ structs:
         description: The op ID of the operation pinning the cursor. Will be empty for idle cursors.
         type: long
         optional: true
-      lastKnownCommittedTimestamp:
-        description: The timestamp of the commit point known by the server at which the last batch was returned.
-        type: timestamp
-        optional: true
-      lastKnownCommittedTerm:
-        description: The term of the commit point known by the server at which the last batch was returned.
-        type: long
+      lastKnownCommittedOpTime:
+        description: The commit point known by the server at the time when the last batch was returned.
+        type: optime
         optional: true

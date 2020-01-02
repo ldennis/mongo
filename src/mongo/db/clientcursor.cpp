@@ -152,10 +152,7 @@ GenericCursor ClientCursor::toGenericCursor() const {
     if (auto opCtx = _operationUsingCursor) {
         gc.setOperationUsingCursorId(opCtx->getOpID());
     }
-    if (_lastKnownCommittedOpTime) {
-        gc.setLastKnownCommittedTimestamp(_lastKnownCommittedOpTime.get().getTimestamp());
-        gc.setLastKnownCommittedTerm(_lastKnownCommittedOpTime.get().getTerm());
-    }
+    gc.setLastKnownCommittedOpTime(_lastKnownCommittedOpTime);
     return gc;
 }
 
