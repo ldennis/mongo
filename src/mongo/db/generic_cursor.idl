@@ -35,8 +35,8 @@ global:
 
 imports:
   - "mongo/db/logical_session_id.idl"
-  - "mongo/idl/basic_types.idl"
   - "mongo/db/repl/replication_types.idl"
+  - "mongo/idl/basic_types.idl"
 
 structs:
   GenericCursor:

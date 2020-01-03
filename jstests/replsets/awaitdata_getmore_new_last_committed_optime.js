@@ -106,7 +106,7 @@ restartServerReplication(secondaries[3]);
 
 // Do another write to advance the optime so that the test client's lastKnownCommittedOpTime is
 // behind the node's lastCommittedOpTime once all nodes catch up.
-jsTestLog('Do another after restarting replication');
+jsTestLog('Do another write after restarting replication');
 assert.commandWorked(primaryDB[collName].insert({_id: 2}));
 
 // Wait until all nodes have committed the last op. At this point in executing the getMore,
