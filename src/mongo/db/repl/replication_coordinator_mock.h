@@ -323,6 +323,9 @@ public:
         boost::optional<TopologyVersion> clientTopologyVersion,
         boost::optional<Date_t> deadline) const override;
 
+    virtual StatusWith<Timestamp> getLatestOplogTimestamp(OperationContext* opCtx) const
+        noexcept override;
+
 private:
     ServiceContext* const _service;
     ReplSettings _settings;

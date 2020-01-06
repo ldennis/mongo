@@ -496,5 +496,10 @@ std::shared_ptr<const repl::IsMasterResponse> ReplicationCoordinatorEmbedded::aw
     UASSERT_NOT_IMPLEMENTED;
 };
 
+StatusWith<Timestamp> ReplicationCoordinatorEmbedded::getLatestOplogTimestamp(
+    OperationContext* opCtx) const noexcept {
+    UASSERT_NOT_IMPLEMENTED;
+}
+
 }  // namespace embedded
 }  // namespace mongo

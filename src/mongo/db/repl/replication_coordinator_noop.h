@@ -260,6 +260,8 @@ public:
         boost::optional<TopologyVersion> clientTopologyVersion,
         boost::optional<Date_t> deadline) const final;
 
+    StatusWith<Timestamp> getLatestOplogTimestamp(OperationContext* opCtx) const noexcept override;
+
 private:
     ServiceContext* const _service;
 };

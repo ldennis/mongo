@@ -956,10 +956,8 @@ public:
     /**
      * Returns the timestamp of latest oplog entry if supported by the storage engine.
      */
-    virtual StatusWith<Timestamp> getLatestOplogTimestamp(OperationContext* opCtx) const noexcept {
-        return Status(ErrorCodes::OplogOperationUnsupported,
-                      "Getting the latest oplog timestamp not supported.");
-    };
+    virtual StatusWith<Timestamp> getLatestOplogTimestamp(OperationContext* opCtx) const
+        noexcept = 0;
 
 protected:
     ReplicationCoordinator();

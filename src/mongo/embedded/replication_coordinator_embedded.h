@@ -267,6 +267,8 @@ public:
         boost::optional<repl::TopologyVersion> previous,
         boost::optional<Date_t> deadline) const override;
 
+    StatusWith<Timestamp> getLatestOplogTimestamp(OperationContext* opCtx) const noexcept override;
+
 private:
     // Back pointer to the ServiceContext that has started the instance.
     ServiceContext* const _service;

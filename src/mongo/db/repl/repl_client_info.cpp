@@ -69,15 +69,16 @@ void ReplClientInfo::setLastOp(OperationContext* opCtx, const OpTime& ot) {
 void ReplClientInfo::setLastOpToSystemLastOpTime(OperationContext* opCtx) {
     auto replCoord = repl::ReplicationCoordinator::get(opCtx->getServiceContext());
     if (replCoord->isReplEnabled() && opCtx->writesAreReplicated()) {
-        auto sw = replCoord->getLatestOplogTimestamp(opCtx);
+        auto statusWithLatestOplogTimestamp = replCoord->getLatestOplogTimestamp(opCtx);
         OpTime systemOpTime;
-        if (!sw.isOK()) {
+        if (!statusWithLatestOplogTimestamp.isOK()) {
             systemOpTime = replCoord->getMyLastAppliedOpTime();
-            LOG(2) << "Failed to get latest oplog timestamp: " << sw.getStatus()
+            LOG(2) << "Failed to get latest oplog timestamp: "
+                   << statusWithLatestOplogTimestamp.getStatus()
                    << " Using in-memory last applied optime " << systemOpTime
                    << " as the system optime for this client.";
         } else {
-            systemOpTime = OpTime(sw.getValue(), replCoord->getTerm());
+            systemOpTime = OpTime(statusWithLatestOplogTimestamp.getValue(), replCoord->getTerm());
         }
 
         // If the system optime has gone backwards, that must mean that there was a rollback.

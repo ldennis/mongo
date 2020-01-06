@@ -348,7 +348,8 @@ public:
         RaftMongoSpecActionEnum action,
         boost::optional<Timestamp> oplogReadTimestamp = boost::none) const override;
 
-    StatusWith<Timestamp> getLatestOplogTimestamp(OperationContext* opCtx) const noexcept override;
+    virtual StatusWith<Timestamp> getLatestOplogTimestamp(OperationContext* opCtx) const
+        noexcept override;
 
     // ================== Test support API ===================
 

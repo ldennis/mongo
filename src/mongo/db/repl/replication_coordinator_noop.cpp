@@ -470,5 +470,10 @@ std::shared_ptr<const IsMasterResponse> ReplicationCoordinatorNoOp::awaitIsMaste
     MONGO_UNREACHABLE;
 }
 
+StatusWith<Timestamp> ReplicationCoordinatorNoOp::getLatestOplogTimestamp(
+    OperationContext* opCtx) const noexcept {
+    MONGO_UNREACHABLE;
+}
+
 }  // namespace repl
 }  // namespace mongo
