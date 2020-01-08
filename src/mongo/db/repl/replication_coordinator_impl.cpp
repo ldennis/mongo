@@ -1934,17 +1934,18 @@ std::shared_ptr<const IsMasterResponse> ReplicationCoordinatorImpl::awaitIsMaste
     return statusWithIsMaster.getValue();
 }
 
-StatusWith<Timestamp> ReplicationCoordinatorImpl::getLatestOplogTimestamp(
-    OperationContext* opCtx) const noexcept try {
+OpTime ReplicationCoordinatorImpl::getLatestWriteOpTime(OperationContext* opCtx) const {
     ShouldNotConflictWithSecondaryBatchApplicationBlock noPBWMBlock(opCtx->lockState());
     Lock::GlobalLock globalLock(opCtx, MODE_IS);
+    // Check if the node is primary after acquiring global IS lock.
+    uassert(ErrorCodes::NotMaster,
+            "Not primary so can't get latest write optime",
+            canAcceptNonLocalWrites());
     auto oplog = LocalOplogInfo::get(opCtx)->getCollection();
-    if (!oplog) {
-        return Status(ErrorCodes::NamespaceNotFound, "oplog collection does not exist.");
-    }
-    return oplog->getRecordStore()->getLatestOplogTimestamp(opCtx);
-} catch (const DBException& e) {
-    return e.toStatus();
+    uassert(ErrorCodes::NamespaceNotFound, "oplog collection does not exist.", oplog);
+    auto latestOplogTimestamp =
+        uassertStatusOK(oplog->getRecordStore()->getLatestOplogTimestamp(opCtx));
+    return OpTime(latestOplogTimestamp, getTerm());
 }
 
 void ReplicationCoordinatorImpl::_killConflictingOpsOnStepUpAndStepDown(

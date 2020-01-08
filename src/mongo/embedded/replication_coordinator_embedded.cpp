@@ -496,9 +496,8 @@ std::shared_ptr<const repl::IsMasterResponse> ReplicationCoordinatorEmbedded::aw
     UASSERT_NOT_IMPLEMENTED;
 };
 
-StatusWith<Timestamp> ReplicationCoordinatorEmbedded::getLatestOplogTimestamp(
-    OperationContext* opCtx) const noexcept {
-    UASSERT_NOT_IMPLEMENTED;
+OpTime ReplicationCoordinatorEmbedded::getLatestWriteOpTime(OperationContext* opCtx) const {
+    return getMyLastAppliedOpTime();
 }
 
 }  // namespace embedded

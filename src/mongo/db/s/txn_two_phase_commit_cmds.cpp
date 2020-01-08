@@ -243,8 +243,14 @@ public:
                 // A decision will most likely have been written from a different OperationContext
                 // (in all cases except the one where this command aborts the local participant), so
                 // ensure waiting for the client's writeConcern of the decision.
-                repl::ReplClientInfo::forClient(opCtx->getClient())
-                    .setLastOpToSystemLastOpTime(opCtx);
+                try {
+                    repl::ReplClientInfo::forClient(opCtx->getClient())
+                        .setLastOpToSystemLastOpTime(opCtx);
+                } catch (const DBException& e) {
+                    // Ignoring errors because we cannot use the same OperationContext to wait for
+                    // writeConcern anyways.
+                    LOG(2) << "Ignoring set last op error: " << e.toStatus();
+                }
             });
 
             if (coordinatorDecisionFuture) {

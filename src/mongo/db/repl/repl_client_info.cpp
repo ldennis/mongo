@@ -69,17 +69,31 @@ void ReplClientInfo::setLastOp(OperationContext* opCtx, const OpTime& ot) {
 void ReplClientInfo::setLastOpToSystemLastOpTime(OperationContext* opCtx) {
     auto replCoord = repl::ReplicationCoordinator::get(opCtx->getServiceContext());
     if (replCoord->isReplEnabled() && opCtx->writesAreReplicated()) {
-        auto statusWithLatestOplogTimestamp = replCoord->getLatestOplogTimestamp(opCtx);
         OpTime systemOpTime;
-        if (!statusWithLatestOplogTimestamp.isOK()) {
-            systemOpTime = replCoord->getMyLastAppliedOpTime();
-            LOG(2) << "Failed to get latest oplog timestamp: "
-                   << statusWithLatestOplogTimestamp.getStatus()
-                   << " Using in-memory last applied optime " << systemOpTime
-                   << " as the system optime for this client.";
-        } else {
-            systemOpTime = OpTime(statusWithLatestOplogTimestamp.getValue(), replCoord->getTerm());
-        }
+        auto status = [&] {
+            try {
+                // Get the latest OpTime from oplog.
+                systemOpTime = replCoord->getLatestWriteOpTime(opCtx);
+                return Status::OK();
+            } catch (const DBException& e) {
+                // Fall back to use my lastAppliedOpTime if we failed to get the latest OpTime from
+                // storage. In most cases, it is safe to ignore errors because if
+                // getLatestWriteOpTime throws, we cannot use the same opCtx to wait for
+                // writeConcern anyways. But getLastError from the same client could use a different
+                // opCtx to wait for the lastOp. So this is a best effort attempt to set the lastOp
+                // to the in-memory lastAppliedOpTime (which could be lagged). And this is a known
+                // bug in getLastError.
+                systemOpTime = replCoord->getMyLastAppliedOpTime();
+                if (e.toStatus() == ErrorCodes::OplogOperationUnsupported ||
+                    e.toStatus() == ErrorCodes::NamespaceNotFound ||
+                    e.toStatus() == ErrorCodes::CollectionIsEmpty) {
+                    // It is ok if the storage engine does not support getLatestOplogTimestamp() or
+                    // if the oplog is empty.
+                    return Status::OK();
+                }
+                return e.toStatus();
+            }
+        }();
 
         // If the system optime has gone backwards, that must mean that there was a rollback.
         // This is safe, but the last op for a Client should never go backwards, so just leave
@@ -94,6 +108,9 @@ void ReplClientInfo::setLastOpToSystemLastOpTime(OperationContext* opCtx) {
         }
 
         lastOpInfo(opCtx).lastOpSetExplicitly = true;
+
+        // Throw if getLatestWriteOpTime failed.
+        uassertStatusOK(status);
     }
 }
 

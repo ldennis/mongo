@@ -566,9 +566,8 @@ std::shared_ptr<const IsMasterResponse> ReplicationCoordinatorMock::awaitIsMaste
     return response;
 }
 
-StatusWith<Timestamp> ReplicationCoordinatorMock::getLatestOplogTimestamp(
-    OperationContext* opCtx) const noexcept {
-    MONGO_UNREACHABLE;
+OpTime ReplicationCoordinatorMock::getLatestWriteOpTime(OperationContext* opCtx) const {
+    return getMyLastAppliedOpTime();
 }
 
 }  // namespace repl

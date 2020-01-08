@@ -954,10 +954,12 @@ public:
         boost::optional<Timestamp> oplogReadTimestamp = boost::none) const {}
 
     /**
-     * Returns the timestamp of latest oplog entry if supported by the storage engine.
+     * When called on a primary, returns the OpTime that consists of the timestamp of the latest
+     * oplog entry and the current term if getLatestOplogTimestamp() is supported by the storage
+     * engine and the oplog collection exists and is not empty. Otherwise, returns the
+     * lastAppliedOpTime.
      */
-    virtual StatusWith<Timestamp> getLatestOplogTimestamp(OperationContext* opCtx) const
-        noexcept = 0;
+    virtual OpTime getLatestWriteOpTime(OperationContext* opCtx) const = 0;
 
 protected:
     ReplicationCoordinator();
