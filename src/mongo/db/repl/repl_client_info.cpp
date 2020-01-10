@@ -86,9 +86,11 @@ void ReplClientInfo::setLastOpToSystemLastOpTime(OperationContext* opCtx) {
                 systemOpTime = replCoord->getMyLastAppliedOpTime();
                 if (e.toStatus() == ErrorCodes::OplogOperationUnsupported ||
                     e.toStatus() == ErrorCodes::NamespaceNotFound ||
-                    e.toStatus() == ErrorCodes::CollectionIsEmpty) {
+                    e.toStatus() == ErrorCodes::CollectionIsEmpty ||
+                    ErrorCodes::isNotMasterError(e.toStatus())) {
                     // It is ok if the storage engine does not support getLatestOplogTimestamp() or
-                    // if the oplog is empty.
+                    // if the oplog is empty. If the node stepped down in between, it is correct to
+                    // use lastAppliedOpTime as last OpTime.
                     return Status::OK();
                 }
                 return e.toStatus();
@@ -111,6 +113,20 @@ void ReplClientInfo::setLastOpToSystemLastOpTime(OperationContext* opCtx) {
 
         // Throw if getLatestWriteOpTime failed.
         uassertStatusOK(status);
+    }
+}
+
+void ReplClientInfo::setLastOpToSystemLastOpTimeIgnoringInterrupt(OperationContext* opCtx) {
+    try {
+        repl::ReplClientInfo::forClient(opCtx->getClient()).setLastOpToSystemLastOpTime(opCtx);
+    } catch (const ExceptionForCat<ErrorCategory::Interruption>& e) {
+        // In most cases, it is safe to ignore interruption errors because we cannot use the same
+        // OperationContext to wait for writeConcern anyways.
+        LOG(2) << "Ignoring set last op interruption error: " << e.toStatus();
+    } catch (const ExceptionFor<ErrorCodes::TransactionCoordinatorSteppingDown>& e) {
+        // This is an internal error code used in sharding and will be converted to
+        // InterruptedDueToReplStateChange which is an interruption error.
+        LOG(2) << "Ignoring set last op interruption error: " << e.toStatus();
     }
 }
 

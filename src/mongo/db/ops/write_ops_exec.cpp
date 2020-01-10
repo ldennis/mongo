@@ -167,15 +167,8 @@ public:
             // here. No-op updates will not generate a new lastOp, so we still need the
             // guard to fire in that case. Operations on the local DB aren't replicated, so they
             // don't need to bump the lastOp.
-            try {
-                replClientInfo().setLastOpToSystemLastOpTime(_opCtx);
-                LOG(5) << "Set last op to system time: "
-                       << replClientInfo().getLastOp().getTimestamp();
-            } catch (const DBException& e) {
-                // Ignoring errors because we cannot use the the same OperationContext to wait for
-                // writeConcern anyways.
-                LOG(2) << "Ignoring set last op error: " << e.toStatus();
-            }
+            replClientInfo().setLastOpToSystemLastOpTimeIgnoringInterrupt(_opCtx);
+            LOG(5) << "Set last op to system time: " << replClientInfo().getLastOp().getTimestamp();
         }
     }
 
