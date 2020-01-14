@@ -71,7 +71,8 @@ public:
     /**
      * Use this to set the LastOp to the latest known OpTime in the oplog. On primary, The OpTime
      * used consists of the timestamp of the latest oplog entry on disk and the current term. On
-     * secondaries, lastAppliedOpTime is used.
+     * secondaries, lastAppliedOpTime is used. Using lastAppliedOpTime on secondaries is the desired
+     * behavior, since secondaries do timestamped reads at the lastApplied.
      *
      * Setting the lastOp to the latest OpTime is necessary when doing no-op writes, as we need to
      * set the client's lastOp to a proper value for write concern wait to work.
