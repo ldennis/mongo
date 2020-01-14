@@ -1937,10 +1937,6 @@ std::shared_ptr<const IsMasterResponse> ReplicationCoordinatorImpl::awaitIsMaste
 OpTime ReplicationCoordinatorImpl::getLatestWriteOpTime(OperationContext* opCtx) const {
     ShouldNotConflictWithSecondaryBatchApplicationBlock noPBWMBlock(opCtx->lockState());
     Lock::GlobalLock globalLock(opCtx, MODE_IS);
-    // Check if the node is primary after acquiring global IS lock.
-    uassert(ErrorCodes::NotMaster,
-            "Not primary so can't get latest write optime",
-            canAcceptNonLocalWrites());
     auto oplog = LocalOplogInfo::get(opCtx)->getCollection();
     uassert(ErrorCodes::NamespaceNotFound, "oplog collection does not exist.", oplog);
     auto latestOplogTimestamp =
