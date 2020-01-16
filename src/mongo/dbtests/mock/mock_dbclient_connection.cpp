@@ -43,6 +43,14 @@ using std::string;
 using std::vector;
 
 namespace mongo {
+MockDBClientConnection::MockDBClientConnection()
+    : _remoteServer(nullptr),
+      _isFailed(false),
+      _sockCreationTime(mongo::curTimeMicros64()),
+      _autoReconnect(false) {
+    _setServerRPCProtocols(rpc::supports::kAll);
+}
+
 MockDBClientConnection::MockDBClientConnection(MockRemoteDBServer* remoteServer, bool autoReconnect)
     : _remoteServerInstanceID(remoteServer->getInstanceID()),
       _remoteServer(remoteServer),
@@ -55,6 +63,7 @@ MockDBClientConnection::~MockDBClientConnection() {}
 bool MockDBClientConnection::connect(const char* hostName,
                                      StringData applicationName,
                                      std::string& errmsg) {
+    verify(_remoteServer);
     if (_remoteServer->isRunning()) {
         _remoteServerInstanceID = _remoteServer->getInstanceID();
         _setServerRPCProtocols(rpc::supports::kAll);
@@ -72,6 +81,7 @@ std::pair<rpc::UniqueReply, DBClientBase*> MockDBClientConnection::runCommandWit
 
     try {
         _lastCursorMessage = boost::none;
+        verify(_remoteServer);
         auto reply = _remoteServer->runCommand(_remoteServerInstanceID, request);
         auto status = getStatusFromCommandResult(reply->getCommandReply());
         // The real DBClientBase always throws HostUnreachable on network error, so we do the
@@ -103,6 +113,7 @@ std::unique_ptr<mongo::DBClientCursor> MockDBClientConnection::query(
     checkConnection();
 
     try {
+        verify(_remoteServer);
         mongo::BSONArray result(_remoteServer->query(_remoteServerInstanceID,
                                                      nsOrUuid,
                                                      query,
@@ -133,11 +144,11 @@ bool MockDBClientConnection::isFailed() const {
 }
 
 string MockDBClientConnection::getServerAddress() const {
-    return _remoteServer->getServerAddress();
+    return _remoteServer ? _remoteServer->getServerAddress() : "localhost:27017";
 }
 
 string MockDBClientConnection::toString() const {
-    return _remoteServer->toString();
+    return _remoteServer ? _remoteServer->toString() : "localhost:27017";
 }
 
 unsigned long long MockDBClientConnection::query(
@@ -155,6 +166,7 @@ uint64_t MockDBClientConnection::getSockCreationMicroSec() const {
 }
 
 void MockDBClientConnection::insert(const string& ns, BSONObj obj, int flags) {
+    verify(_remoteServer);
     _remoteServer->insert(ns, obj, flags);
 }
 
@@ -165,6 +177,7 @@ void MockDBClientConnection::insert(const string& ns, const vector<BSONObj>& obj
 }
 
 void MockDBClientConnection::remove(const string& ns, Query query, int flags) {
+    verify(_remoteServer);
     _remoteServer->remove(ns, query, flags);
 }
 
@@ -195,8 +208,32 @@ bool MockDBClientConnection::call(mongo::Message& toSend,
             return true;
         }
     }
-    verify(false);  // unimplemented otherwise
-    return false;
+    stdx::unique_lock lk(_netMutex);
+
+    _lastSentMessage = toSend;
+    _mockCallResponsesCV.wait(lk, [&] {
+        _blockedOnNetwork = (_callIter == _mockCallResponses.end());
+        return !_blockedOnNetwork;
+    });
+
+    const auto& swResponse = *_callIter;
+    _callIter++;
+    response = uassertStatusOK(swResponse);
+    return true;
+}
+
+Status MockDBClientConnection::recv(mongo::Message& m, int lastRequestId) {
+    stdx::unique_lock lk(_netMutex);
+
+    _mockRecvResponsesCV.wait(lk, [&] {
+        _blockedOnNetwork = (_recvIter == _mockRecvResponses.end());
+        return !_blockedOnNetwork;
+    });
+
+    const auto& swResponse = *_recvIter;
+    _recvIter++;
+    m = uassertStatusOK(swResponse);
+    return Status::OK();
 }
 
 void MockDBClientConnection::say(mongo::Message& toSend, bool isRetry, string* actualServer) {

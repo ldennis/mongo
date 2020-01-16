@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "mongo/client/dbclient_connection.h"
+#include "mongo/db/query/cursor_response.h"
 #include "mongo/dbtests/mock/mock_remote_db_server.h"
 
 namespace mongo {
@@ -43,6 +44,49 @@ namespace mongo {
  */
 class MockDBClientConnection : public mongo::DBClientConnection {
 public:
+    /**
+     * An OP_MSG response to a 'find' command.
+     */
+    static Message mockFindResponse(NamespaceString nss,
+                                    long long cursorId,
+                                    std::vector<BSONObj> firstBatch,
+                                    const BSONObj& metadata) {
+        auto cursorRes = CursorResponse(nss, cursorId, firstBatch);
+        BSONObjBuilder bob(cursorRes.toBSON(CursorResponse::ResponseType::InitialResponse));
+        bob.appendElementsUnique(metadata);
+        return OpMsg{bob.obj()}.serialize();
+    }
+
+    /**
+     * An OP_MSG response to a 'getMore' command.
+     */
+    static Message mockGetMoreResponse(NamespaceString nss,
+                                       long long cursorId,
+                                       std::vector<BSONObj> batch,
+                                       const BSONObj& metadata,
+                                       bool moreToCome = false) {
+        auto cursorRes = CursorResponse(nss, cursorId, batch);
+        BSONObjBuilder bob(cursorRes.toBSON(CursorResponse::ResponseType::SubsequentResponse));
+        bob.appendElementsUnique(metadata);
+        auto m = OpMsg{bob.obj()}.serialize();
+        if (moreToCome) {
+            OpMsg::setFlag(&m, OpMsg::kMoreToCome);
+        }
+        return m;
+    }
+
+    /**
+     * A generic non-ok OP_MSG command response.
+     */
+    static Message mockErrorResponse(ErrorCodes::Error err) {
+        OpMsgBuilder builder;
+        BSONObjBuilder bodyBob;
+        bodyBob.append("ok", 0);
+        bodyBob.append("code", err);
+        builder.setBody(bodyBob.done());
+        return builder.finish();
+    }
+
     /**
      * Create a mock connection to a mock server.
      *
@@ -55,6 +99,11 @@ public:
      */
     MockDBClientConnection(MockRemoteDBServer* remoteServer, bool autoReconnect = false);
     virtual ~MockDBClientConnection();
+
+    /**
+     * Create a mock connection that only supports call() and recv().
+     */
+    MockDBClientConnection();
 
     //
     // DBClientBase methods
@@ -120,10 +169,43 @@ public:
               mongo::Message& response,
               bool assertOk,
               std::string* actualServer) override;
+    Status recv(mongo::Message& m, int lastRequestId) override;
     void say(mongo::Message& toSend,
              bool isRetry = false,
              std::string* actualServer = nullptr) override;
     bool lazySupported() const override;
+
+    using Responses = std::vector<StatusWith<mongo::Message>>;
+
+    Message getLastSentMessage() {
+        stdx::lock_guard lk(_netMutex);
+        return _lastSentMessage;
+    }
+
+    void setCallResponses(Responses responses) {
+        stdx::lock_guard lk(_netMutex);
+        _mockCallResponses = std::move(responses);
+        _callIter = _mockCallResponses.begin();
+        if (_blockedOnNetwork && !_mockCallResponses.empty()) {
+            _blockedOnNetwork = false;
+            _mockCallResponsesCV.notify_all();
+        }
+    }
+
+    void setRecvResponses(Responses responses) {
+        stdx::lock_guard lk(_netMutex);
+        _mockRecvResponses = std::move(responses);
+        _recvIter = _mockRecvResponses.begin();
+        if (_blockedOnNetwork && !_mockRecvResponses.empty()) {
+            _blockedOnNetwork = false;
+            _mockRecvResponsesCV.notify_all();
+        }
+    }
+
+    bool isBlockedOnNetwork() {
+        stdx::lock_guard lk(_netMutex);
+        return _blockedOnNetwork;
+    }
 
 private:
     void checkConnection() override;
@@ -134,5 +216,18 @@ private:
     uint64_t _sockCreationTime;
     bool _autoReconnect;
     boost::optional<OpMsgRequest> _lastCursorMessage;
+
+    Mutex _netMutex = MONGO_MAKE_LATCH("MockDBClientConnection");
+
+    stdx::condition_variable _mockCallResponsesCV;
+    Responses _mockCallResponses;
+    Responses::iterator _callIter;
+
+    stdx::condition_variable _mockRecvResponsesCV;
+    Responses _mockRecvResponses;
+    Responses::iterator _recvIter;
+
+    Message _lastSentMessage;
+    bool _blockedOnNetwork = false;
 };
 }  // namespace mongo
