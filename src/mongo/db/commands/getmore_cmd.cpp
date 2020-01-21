@@ -671,6 +671,34 @@ public:
             auto cursorManager = CursorManager::get(opCtx);
             auto cursorPin = uassertStatusOK(cursorManager->pinCursor(opCtx, _request.cursorid));
 
+            // Check if this is an exhaust cursor used for oplog fetching by another member in the
+            // replica set. This check is only performed once for an exhaust cursor (i.e. when
+            // cursorPin->isReplOplogFetching() == boost::none).
+            if (opCtx->isExhaust() && _request.nss == NamespaceString::kRsOplogNamespace &&
+                cursorPin->isReplOplogFetching() == boost::none) {
+                auto replCoord = repl::ReplicationCoordinator::get(opCtx);
+                // For an exhaust cursor on the oplog collection, we first assume
+                // isReplOplogFetching false and we set it to true if the exhaust cursor is from
+                // another member in the replica set.
+                cursorPin->setIsReplOplogFetching(false);
+                if (replCoord->getSettings().usingReplSets()) {
+                    auto otherNodes = replCoord->getOtherNodesInReplSet();
+                    if (std::find(otherNodes.begin(),
+                                  otherNodes.end(),
+                                  opCtx->getClient()->getRemote()) != otherNodes.end()) {
+                        // This is an exhaust oplog cursor for another node in the replica set.
+                        cursorPin->setIsReplOplogFetching(true);
+                    }
+                }
+            }
+
+            if (cursorPin->isReplOplogFetching() && cursorPin->isReplOplogFetching().get()) {
+                // Mark isReplOplogFetching true in curOp so we can add the execution time for this
+                // exhaust operation to the repl.network.oplogGetMoresProcessed metrics in
+                // curOp::completeAndLogOperation when the operation finishes.
+                curOp->debug().isReplOplogFetching = true;
+            }
+
             // Get the read concern level here in case the cursor is exhausted while iterating.
             const auto isLinearizableReadConcern = cursorPin->getReadConcernArgs().getLevel() ==
                 repl::ReadConcernLevel::kLinearizableReadConcern;

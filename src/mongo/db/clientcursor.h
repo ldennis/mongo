@@ -317,6 +317,21 @@ public:
     }
 
     /**
+     * Returns whether this is an exhaust cursor for secondary oplog fetching.
+     */
+    boost::optional<bool> isReplOplogFetching() const {
+        return _isReplOplogFetching;
+    }
+
+    /**
+     * Sets whether this is an exhaust cursor for secondary oplog fetching.
+     */
+    void setIsReplOplogFetching(bool isReplOplogFetching) {
+        _isReplOplogFetching = isReplOplogFetching;
+    }
+
+
+    /**
      * Returns the server-wide the count of living cursors. Such a cursor is called an "open
      * cursor".
      */
@@ -457,6 +472,10 @@ private:
     // Commit point at the time the last batch was returned. This is only used by internal exhaust
     // oplog fetching. Also see lastKnownCommittedOpTime in GetMoreRequest.
     boost::optional<repl::OpTime> _lastKnownCommittedOpTime;
+
+    // Whether this is an exhaust cursor for secondary oplog fetching. This value remains
+    // boost::none if the cursor is not an exhaust cursor or not a cursor on the oplog collection.
+    boost::optional<bool> _isReplOplogFetching;
 };
 
 /**
