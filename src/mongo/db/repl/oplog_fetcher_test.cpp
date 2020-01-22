@@ -1052,6 +1052,18 @@ BSONObj makeNoopOplogEntry(Seconds seconds) {
     return makeNoopOplogEntry({{seconds, 0}, 1LL});
 }
 
+BSONObj makeOplogBatchMetadata(boost::optional<const rpc::ReplSetMetadata&> replMetadata,
+                               boost::optional<const rpc::OplogQueryMetadata&> oqMetadata) {
+    BSONObjBuilder bob;
+    if (replMetadata) {
+        ASSERT_OK(replMetadata->writeToMetadata(&bob));
+    }
+    if (oqMetadata) {
+        ASSERT_OK(oqMetadata->writeToMetadata(&bob));
+    }
+    return bob.obj();
+}
+
 Message makeFirstBatch(CursorId cursorId,
                        const NewOplogFetcher::Documents& oplogEntries,
                        const BSONObj& metadata) {
@@ -1115,14 +1127,7 @@ protected:
     static const int rbid = 2;
     static const int primaryIndex = 2;
     static const int syncSourceIndex = 2;
-
-    static BSONObj makeOplogQueryMetadataObject() {
-        rpc::OplogQueryMetadata oqMetadata(
-            {staleOpTime, staleWallTime}, staleOpTime, rbid, primaryIndex, syncSourceIndex);
-        BSONObjBuilder bob;
-        ASSERT_OK(oqMetadata.writeToMetadata(&bob));
-        return bob.obj();
-    }
+    static const rpc::OplogQueryMetadata staleOqMetadata;
 
     // 16MB max batch size / 12 byte min doc size * 10 (for good measure) = defaultBatchSize to use.
     const int defaultBatchSize = (16 * 1024 * 1024) / 12 * 10;
@@ -1139,8 +1144,8 @@ protected:
     /**
      * Tests checkSyncSource result handling.
      */
-    void testSyncSourceChecking(rpc::ReplSetMetadata* replMetadata,
-                                rpc::OplogQueryMetadata* oqMetadata);
+    void testSyncSourceChecking(boost::optional<const rpc::ReplSetMetadata&> replMetadata,
+                                boost::optional<const rpc::OplogQueryMetadata&> oqMetadata);
 
     std::unique_ptr<DataReplicatorExternalStateMock> dataReplicatorExternalState;
 
@@ -1155,6 +1160,8 @@ protected:
 const OpTime NewOplogFetcherTest::remoteNewerOpTime = OpTime(Timestamp(124, 1), 2);
 const OpTime NewOplogFetcherTest::staleOpTime = OpTime(Timestamp(1, 1), 0);
 const Date_t NewOplogFetcherTest::staleWallTime = Date_t() + Seconds(staleOpTime.getSecs());
+const rpc::OplogQueryMetadata NewOplogFetcherTest::staleOqMetadata = rpc::OplogQueryMetadata(
+    {staleOpTime, staleWallTime}, staleOpTime, rbid, primaryIndex, syncSourceIndex);
 
 void NewOplogFetcherTest::setUp() {
     executor::ThreadPoolExecutorTest::setUp();
@@ -1237,20 +1244,14 @@ std::unique_ptr<ShutdownState> NewOplogFetcherTest::processSingleBatch(
     return shutdownState;
 }
 
-void NewOplogFetcherTest::testSyncSourceChecking(rpc::ReplSetMetadata* replMetadata,
-                                                 rpc::OplogQueryMetadata* oqMetadata) {
+void NewOplogFetcherTest::testSyncSourceChecking(
+    boost::optional<const rpc::ReplSetMetadata&> replMetadata,
+    boost::optional<const rpc::OplogQueryMetadata&> oqMetadata) {
     auto firstEntry = makeNoopOplogEntry(lastFetched);
     auto secondEntry = makeNoopOplogEntry({{Seconds(456), 0}, lastFetched.getTerm()});
     auto thirdEntry = makeNoopOplogEntry({{Seconds(789), 0}, lastFetched.getTerm()});
 
-    BSONObjBuilder bob;
-    if (replMetadata) {
-        ASSERT_OK(replMetadata->writeToMetadata(&bob));
-    }
-    if (oqMetadata) {
-        ASSERT_OK(oqMetadata->writeToMetadata(&bob));
-    }
-    BSONObj metadataObj = bob.obj();
+    auto metadataObj = makeOplogBatchMetadata(replMetadata, oqMetadata);
 
     dataReplicatorExternalState->shouldStopFetchingResult = true;
 
@@ -1441,7 +1442,7 @@ TEST_F(
     auto firstEntry = makeNoopOplogEntry(lastFetched);
     auto secondEntry = makeNoopOplogEntry({{Seconds(456), 0}, lastFetched.getTerm()});
 
-    auto metadataObj = makeOplogQueryMetadataObject();
+    auto metadataObj = makeOplogBatchMetadata(boost::none, staleOqMetadata);
 
     processSingleRequestResponse(oplogFetcher.getDBClientConnection_forTest(),
                                  makeFirstBatch(cursorId, {firstEntry, secondEntry}, metadataObj),
@@ -1463,8 +1464,8 @@ TEST_F(
 
     ASSERT_EQ(mongo::StringData(msg.body.firstElement().fieldName()), "getMore");
     ASSERT_EQUALS(NamespaceString::kRsOplogNamespace.coll(), msg.body["collection"].String());
-    // ASSERT_EQUALS(int(durationCount<Milliseconds>(oplogFetcher.getAwaitDataTimeout_forTest())),
-    //              msg.body.getIntField("maxTimeMS"));
+    ASSERT_EQUALS(int(durationCount<Milliseconds>(oplogFetcher.getAwaitDataTimeout_forTest())),
+                  msg.body.getIntField("maxTimeMS"));
 
     ASSERT_EQUALS(2U, lastEnqueuedDocuments.size());
     ASSERT_BSONOBJ_EQ(thirdEntry, lastEnqueuedDocuments[0]);
