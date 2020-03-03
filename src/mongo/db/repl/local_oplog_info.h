@@ -115,13 +115,13 @@ public:
                       Lock::InterruptBehavior::kThrow),
           _oplogInfo(LocalOplogInfo::get(opCtx)),
           _oplog(_oplogInfo->getCollection()) {
-        invariant(_oplog);
+        uassert(ErrorCodes::NamespaceNotFound, "oplog collection does not exist", _oplog);
         // Obtain Collection exclusive intent write lock for non-document-locking storage engines.
-        if (mode == OPLOG_WRITE &&
-            !opCtx->getServiceContext()->getStorageEngine()->supportsDocLocking()) {
-            _dbWriteLock.emplace(opCtx, NamespaceString::kLocalDb, MODE_IX, deadline);
+        if (!opCtx->getServiceContext()->getStorageEngine()->supportsDocLocking()) {
+            auto lockMode = (mode == OPLOG_WRITE) ? MODE_IX : MODE_IS;
+            _dbWriteLock.emplace(opCtx, NamespaceString::kLocalDb, lockMode, deadline);
             _collWriteLock.emplace(
-                opCtx, LocalOplogInfo::get(opCtx)->getOplogCollectionName(), MODE_IX, deadline);
+                opCtx, LocalOplogInfo::get(opCtx)->getOplogCollectionName(), lockMode, deadline);
         }
     }
 
