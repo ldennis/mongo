@@ -1114,6 +1114,7 @@ env.Library(
         '$BUILD_DIR/mongo/db/commands/server_status',
         '$BUILD_DIR/mongo/db/stats/counters',
         '$BUILD_DIR/mongo/transport/message_compressor',
+        'local_oplog_info',
         'replication_auth',
         'split_horizon',
     ],
