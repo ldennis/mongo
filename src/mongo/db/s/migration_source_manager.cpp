@@ -693,7 +693,6 @@ void MigrationSourceManager::_notifyChangeStreamsOnRecipientFirstChunk(
     auto const serviceContext = _opCtx->getClient()->getServiceContext();
 
     UninterruptibleLockGuard noInterrupt(_opCtx->lockState());
-    AutoGetCollection autoColl(_opCtx, NamespaceString::kRsOplogNamespace, MODE_IX);
     writeConflictRetry(
         _opCtx, "migrateChunkToNewShard", NamespaceString::kRsOplogNamespace.ns(), [&] {
             WriteUnitOfWork uow(_opCtx);
