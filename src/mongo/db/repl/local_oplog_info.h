@@ -95,5 +95,53 @@ private:
     mutable Mutex _newOpMutex = MONGO_MAKE_LATCH("LocaloplogInfo::_newOpMutex");
 };
 
+enum OplogAccessMode {
+    OPLOG_READ = 0,
+    OPLOG_WRITE = 1,
+};
+
+class AutoGetOplog {
+    AutoGetOplog(const AutoGetOplog&) = delete;
+    AutoGetOplog& operator=(const AutoGetOplog&) = delete;
+
+public:
+    explicit AutoGetOplog(OperationContext* opCtx,
+                          OplogAccessMode mode,
+                          Date_t deadline = Date_t::max())
+        : _shouldNotConflictWithSecondaryBatchApplicationBlock(opCtx->lockState()),
+          _globalLock(opCtx,
+                      mode == OPLOG_READ ? MODE_IS : MODE_IX,
+                      deadline,
+                      Lock::InterruptBehavior::kThrow),
+          _oplogInfo(LocalOplogInfo::get(opCtx)),
+          _oplog(_oplogInfo->getCollection()) {
+        invariant(_oplog);
+        // Obtain Collection exclusive intent write lock for non-document-locking storage engines.
+        if (mode == OPLOG_WRITE &&
+            !opCtx->getServiceContext()->getStorageEngine()->supportsDocLocking()) {
+            _dbWriteLock.emplace(opCtx, NamespaceString::kLocalDb, MODE_IX, deadline);
+            _collWriteLock.emplace(
+                opCtx, LocalOplogInfo::get(opCtx)->getOplogCollectionName(), MODE_IX, deadline);
+        }
+    }
+
+    LocalOplogInfo* getOplogInfo() const {
+        return _oplogInfo;
+    }
+
+    Collection* getCollection() const {
+        return _oplog;
+    }
+
+private:
+    ShouldNotConflictWithSecondaryBatchApplicationBlock
+        _shouldNotConflictWithSecondaryBatchApplicationBlock;
+    Lock::GlobalLock _globalLock;
+    LocalOplogInfo* _oplogInfo;
+    Collection* _oplog;
+    boost::optional<Lock::DBLock> _dbWriteLock;
+    boost::optional<Lock::CollectionLock> _collWriteLock;
+};
+
 }  // namespace repl
 }  // namespace mongo
