@@ -261,6 +261,7 @@ env.Library(
         'replication_consistency_markers_idl',
     ],
     LIBDEPS_PRIVATE=[
+        'local_oplog_info',
         '$BUILD_DIR/mongo/db/catalog_raii',
     ],
 )

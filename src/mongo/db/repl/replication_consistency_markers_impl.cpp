@@ -37,6 +37,7 @@
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/concurrency/write_conflict_exception.h"
+#include "mongo/db/repl/local_oplog_info.h"
 #include "mongo/db/repl/optime.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/repl/storage_interface.h"
@@ -460,7 +461,7 @@ ReplicationConsistencyMarkersImpl::refreshOplogTruncateAfterPointIfPrimary(
     // oplog collection must be taken up front so that the mutex can also be taken around both
     // operations without causing deadlocks.
     AutoGetCollection autoTruncateColl(opCtx, _oplogTruncateAfterPointNss, MODE_IX);
-    AutoGetCollection autoOplogColl(opCtx, NamespaceString::kRsOplogNamespace, MODE_IS);
+    AutoGetOplog oplogRead(opCtx, OPLOG_READ);
     stdx::lock_guard<Latch> lk(_refreshOplogTruncateAfterPointMutex);
 
     // Update the oplogTruncateAfterPoint to the storage engine's reported oplog timestamp with no
@@ -487,7 +488,7 @@ ReplicationConsistencyMarkersImpl::refreshOplogTruncateAfterPointIfPrimary(
     // We need an oplog entry in order to return term and wallclock time for an OpTimeAndWallTime
     // result.
     auto truncateOplogEntryBSON = _storageInterface->findOplogEntryLessThanOrEqualToTimestamp(
-        opCtx, autoOplogColl.getCollection(), truncateTimestamp);
+        opCtx, oplogRead.getCollection(), truncateTimestamp);
 
     // The truncate point moves the Durable timestamp forward, so it should always exist in the
     // oplog.
