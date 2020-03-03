@@ -154,7 +154,6 @@ SessionCatalogMigrationSource::SessionCatalogMigrationSource(OperationContext* o
     }
 
     {
-        AutoGetCollection autoColl(opCtx, NamespaceString::kRsOplogNamespace, MODE_IX);
         writeConflictRetry(
             opCtx,
             "session migration initialization majority commit barrier",
