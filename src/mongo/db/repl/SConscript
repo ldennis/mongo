@@ -364,6 +364,9 @@ env.Library(
         '$BUILD_DIR/mongo/db/query_exec',
         '$BUILD_DIR/mongo/db/transaction',
     ],
+    LIBDEPS_PRIVATE=[
+        'local_oplog_info',
+    ],
 )
 
 env.Library(

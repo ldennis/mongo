@@ -35,6 +35,7 @@
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/query/internal_plans.h"
 #include "mongo/db/query/plan_executor.h"
+#include "mongo/db/repl/local_oplog_info.h"
 #include "mongo/util/net/socket_utils.h"
 #include "mongo/util/str.h"
 
@@ -50,15 +51,13 @@ public:
     StatusWith<Value> next() override;
 
 private:
-    Lock::DBLock _dbLock;
-    Lock::CollectionLock _collectionLock;
+    AutoGetOplog _oplogRead;
     OldClientContext _ctx;
     std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> _exec;
 };
 
 OplogIteratorLocal::OplogIteratorLocal(OperationContext* opCtx)
-    : _dbLock(opCtx, NamespaceString::kRsOplogNamespace.db(), MODE_IS),
-      _collectionLock(opCtx, NamespaceString::kRsOplogNamespace, MODE_S),
+    : _oplogRead(opCtx, OPLOG_READ),
       _ctx(opCtx, NamespaceString::kRsOplogNamespace.ns()),
       _exec(
           InternalPlanner::collectionScan(opCtx,
