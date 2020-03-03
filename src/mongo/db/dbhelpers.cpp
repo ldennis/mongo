@@ -48,6 +48,7 @@
 #include "mongo/db/query/get_executor.h"
 #include "mongo/db/query/internal_plans.h"
 #include "mongo/db/query/query_planner.h"
+#include "mongo/db/repl/local_oplog_info.h"
 #include "mongo/db/repl/repl_client_info.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/service_context.h"
@@ -173,9 +174,18 @@ RecordId Helpers::findById(OperationContext* opCtx,
 }
 
 bool Helpers::getSingleton(OperationContext* opCtx, const char* ns, BSONObj& result) {
-    AutoGetCollectionForReadCommand ctx(opCtx, NamespaceString(ns));
-    auto exec =
-        InternalPlanner::collectionScan(opCtx, ns, ctx.getCollection(), PlanExecutor::NO_YIELD);
+    boost::optional<AutoGetCollectionForReadCommand> _autoColl;
+    boost::optional<repl::AutoGetOplog> _autoOplog;
+    auto collection = [&] {
+        if (NamespaceString(ns) == NamespaceString::kRsOplogNamespace) {
+            _autoOplog.emplace(opCtx, repl::OPLOG_READ);
+            return _autoOplog->getCollection();
+        } else {
+            _autoColl.emplace(opCtx, NamespaceString(ns));
+            return _autoColl->getCollection();
+        }
+    }();
+    auto exec = InternalPlanner::collectionScan(opCtx, ns, collection, PlanExecutor::NO_YIELD);
     PlanExecutor::ExecState state = exec->getNext(&result, nullptr);
 
     CurOp::get(opCtx)->done();
@@ -192,9 +202,19 @@ bool Helpers::getSingleton(OperationContext* opCtx, const char* ns, BSONObj& res
 }
 
 bool Helpers::getLast(OperationContext* opCtx, const char* ns, BSONObj& result) {
-    AutoGetCollectionForReadCommand autoColl(opCtx, NamespaceString(ns));
+    boost::optional<AutoGetCollectionForReadCommand> _autoColl;
+    boost::optional<repl::AutoGetOplog> _autoOplog;
+    auto collection = [&] {
+        if (NamespaceString(ns) == NamespaceString::kRsOplogNamespace) {
+            _autoOplog.emplace(opCtx, repl::OPLOG_READ);
+            return _autoOplog->getCollection();
+        } else {
+            _autoColl.emplace(opCtx, NamespaceString(ns));
+            return _autoColl->getCollection();
+        }
+    }();
     auto exec = InternalPlanner::collectionScan(
-        opCtx, ns, autoColl.getCollection(), PlanExecutor::NO_YIELD, InternalPlanner::BACKWARD);
+        opCtx, ns, collection, PlanExecutor::NO_YIELD, InternalPlanner::BACKWARD);
     PlanExecutor::ExecState state = exec->getNext(&result, nullptr);
 
     // Non-yielding collection scans from InternalPlanner will never error.
