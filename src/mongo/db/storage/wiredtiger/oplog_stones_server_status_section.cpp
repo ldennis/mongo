@@ -30,8 +30,8 @@
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/commands/server_status.h"
-#include "mongo/db/db_raii.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/db/repl/local_oplog_info.h"
 
 namespace mongo {
 class OplogStonesServerStatusSection : public ServerStatusSection {
@@ -53,12 +53,10 @@ public:
         if (!opCtx->getServiceContext()->getStorageEngine()->supportsOplogStones()) {
             return builder.obj();
         }
-        {
-            AutoGetCollectionForReadCommand ctx(opCtx, NamespaceString::kRsOplogNamespace);
-            Collection* oplogColl = ctx.getCollection();
-            if (oplogColl) {
-                oplogColl->getRecordStore()->getOplogTruncateStats(builder);
-            }
+        repl::AutoGetOplog oplogRead(opCtx, repl::OPLOG_READ);
+        auto oplog = oplogRead.getCollection();
+        if (oplog) {
+            oplog->getRecordStore()->getOplogTruncateStats(builder);
         }
         return builder.obj();
     }

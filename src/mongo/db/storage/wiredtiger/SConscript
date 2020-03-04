@@ -87,6 +87,7 @@ if wiredtiger:
             'oplog_stone_parameters',
             '$BUILD_DIR/mongo/db/db_raii',
             '$BUILD_DIR/mongo/db/commands/server_status',
+            '$BUILD_DIR/mongo/db/repl/local_oplog_info',
             '$BUILD_DIR/mongo/db/snapshot_window_options',
             '$BUILD_DIR/mongo/db/storage/storage_repair_observer',
             '$BUILD_DIR/mongo/util/options_parser/options_parser',

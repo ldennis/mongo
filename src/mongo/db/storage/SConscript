@@ -100,6 +100,7 @@ env.Library(
         '$BUILD_DIR/mongo/db/catalog/database_holder',
         '$BUILD_DIR/mongo/db/concurrency/lock_manager',
         '$BUILD_DIR/mongo/db/namespace_string',
+        '$BUILD_DIR/mongo/db/repl/local_oplog_info',
         '$BUILD_DIR/mongo/db/service_context',
     ],
 )
