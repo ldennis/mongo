@@ -70,6 +70,7 @@
 #include "mongo/db/query/get_executor.h"
 #include "mongo/db/query/internal_plans.h"
 #include "mongo/db/repl/collection_bulk_loader_impl.h"
+#include "mongo/db/repl/local_oplog_info.h"
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/repl/rollback_gen.h"
@@ -422,23 +423,25 @@ Status StorageInterfaceImpl::createOplog(OperationContext* opCtx, const Namespac
     return Status::OK();
 }
 
-StatusWith<size_t> StorageInterfaceImpl::getOplogMaxSize(OperationContext* opCtx,
-                                                         const NamespaceString& nss) {
+StatusWith<size_t> StorageInterfaceImpl::getOplogMaxSize(OperationContext* opCtx) {
     // This writeConflictRetry loop protects callers from WriteConflictExceptions thrown by the
     // storage engine running out of cache space, despite this operation not performing any writes.
     return writeConflictRetry(
-        opCtx, "StorageInterfaceImpl::getOplogMaxSize", nss.ns(), [&]() -> StatusWith<size_t> {
-            AutoGetCollectionForReadCommand autoColl(opCtx, nss);
-            auto collectionResult = getCollection(autoColl, nss, "Your oplog doesn't exist.");
-            if (!collectionResult.isOK()) {
-                return collectionResult.getStatus();
+        opCtx,
+        "StorageInterfaceImpl::getOplogMaxSize",
+        NamespaceString::kRsOplogNamespace.ns(),
+        [&]() -> StatusWith<size_t> {
+            AutoGetOplog oplogRead(opCtx, OPLOG_READ);
+            auto oplog = oplogRead.getCollection();
+            if (!oplog) {
+                return {ErrorCodes::NamespaceNotFound, "Your oplog doesn't exist."};
             }
-
-            const auto options = DurableCatalog::get(opCtx)->getCollectionOptions(
-                opCtx, collectionResult.getValue()->getCatalogId());
+            const auto options =
+                DurableCatalog::get(opCtx)->getCollectionOptions(opCtx, oplog->getCatalogId());
             if (!options.capped)
-                return {ErrorCodes::BadValue, str::stream() << nss.ns() << " isn't capped"};
-
+                return {ErrorCodes::BadValue,
+                        str::stream()
+                            << NamespaceString::kRsOplogNamespace.ns() << " isn't capped"};
             return options.cappedSize;
         });
 }
@@ -1047,8 +1050,8 @@ boost::optional<BSONObj> StorageInterfaceImpl::findOplogEntryLessThanOrEqualToTi
 
 Timestamp StorageInterfaceImpl::getLatestOplogTimestamp(OperationContext* opCtx) {
     auto statusWithTimestamp = [&]() {
-        AutoGetCollectionForReadCommand autoColl(opCtx, NamespaceString::kRsOplogNamespace);
-        return autoColl.getCollection()->getRecordStore()->getLatestOplogTimestamp(opCtx);
+        AutoGetOplog oplogRead(opCtx, OPLOG_READ);
+        return oplogRead.getCollection()->getRecordStore()->getLatestOplogTimestamp(opCtx);
     }();
 
     // If the storage engine does not support getLatestOplogTimestamp, then fall back to higher
@@ -1236,20 +1239,11 @@ Status StorageInterfaceImpl::isAdminDbValid(OperationContext* opCtx) {
 
 void StorageInterfaceImpl::waitForAllEarlierOplogWritesToBeVisible(OperationContext* opCtx,
                                                                    bool primaryOnly) {
-    Lock::GlobalLock lk(opCtx, MODE_IS);
+    AutoGetOplog oplogRead(opCtx, OPLOG_READ);
     if (primaryOnly &&
         !repl::ReplicationCoordinator::get(opCtx)->canAcceptWritesForDatabase(opCtx, "admin"))
         return;
-    Collection* oplog;
-    {
-        // We don't want to be holding the collection lock while blocking, to avoid deadlocks.
-        // It is safe to store and access the oplog's Collection object with just the global IS
-        // lock because of the special concurrency rules for the oplog.
-        // TODO(spencer): It should be possible to get the pointer to the oplog Collection object
-        // without ever having to take the collection lock.
-        AutoGetCollection oplogLock(opCtx, NamespaceString::kRsOplogNamespace, MODE_IS);
-        oplog = oplogLock.getCollection();
-    }
+    auto oplog = oplogRead.getCollection();
     uassert(ErrorCodes::NotYetInitialized, "The oplog does not exist", oplog);
     oplog->getRecordStore()->waitForAllEarlierOplogWritesToBeVisible(opCtx);
 }
@@ -1257,10 +1251,10 @@ void StorageInterfaceImpl::waitForAllEarlierOplogWritesToBeVisible(OperationCont
 void StorageInterfaceImpl::oplogDiskLocRegister(OperationContext* opCtx,
                                                 const Timestamp& ts,
                                                 bool orderedCommit) {
-    AutoGetCollection oplog(opCtx, NamespaceString::kRsOplogNamespace, MODE_IS);
-    fassert(
-        28557,
-        oplog.getCollection()->getRecordStore()->oplogDiskLocRegister(opCtx, ts, orderedCommit));
+    AutoGetOplog oplogRead(opCtx, OPLOG_READ);
+    fassert(28557,
+            oplogRead.getCollection()->getRecordStore()->oplogDiskLocRegister(
+                opCtx, ts, orderedCommit));
 }
 
 boost::optional<Timestamp> StorageInterfaceImpl::getLastStableRecoveryTimestamp(
