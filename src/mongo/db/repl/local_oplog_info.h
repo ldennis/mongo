@@ -115,7 +115,6 @@ public:
                       Lock::InterruptBehavior::kThrow),
           _oplogInfo(LocalOplogInfo::get(opCtx)),
           _oplog(_oplogInfo->getCollection()) {
-        uassert(ErrorCodes::NamespaceNotFound, "oplog collection does not exist", _oplog);
         // Obtain Collection exclusive intent write lock for non-document-locking storage engines.
         if (!opCtx->getServiceContext()->getStorageEngine()->supportsDocLocking()) {
             auto lockMode = (mode == OPLOG_WRITE) ? MODE_IX : MODE_IS;
