@@ -466,14 +466,25 @@ void OplogFetcher::_runQuery(const executor::TaskExecutor::CallbackArgs& callbac
             return;
         }
 
+        // If we are using exhaust oplog fetching in FCV other than 4.4, we should stop and retry
+        // with a regular cursor. Otherwise if we are not using exhaust oplog fetching in FCV 4.4,
+        // we should also stop and retry with an exhaust cursor.
+        if (oplogFetcherUsesExhaust &&
+            _cursor->isExhaust() !=
+                serverGlobalParams.featureCompatibility.isVersion(
+                    ServerGlobalParams::FeatureCompatibility::Version::kFullyUpgradedTo44)) {
+            hangBeforeOplogFetcherRetries.pauseWhileSet();
+            _disconnectIfExhaust();
+            _createNewCursor(false /* initialFind */);
+            continue;
+        }
+
         auto batchResult = _getNextBatch();
         if (!batchResult.isOK()) {
             auto brStatus = batchResult.getStatus();
 
-            // Recreate a cursor if we have enough retries left or if we need to retry due to FCV
-            // changes.
-            if (brStatus.code() == 4855900 ||
-                _oplogFetcherRestartDecision->shouldContinue(this, brStatus)) {
+            // Recreate a cursor if we have enough retries left.
+            if (_oplogFetcherRestartDecision->shouldContinue(this, brStatus)) {
                 hangBeforeOplogFetcherRetries.pauseWhileSet();
                 _createNewCursor(false /* initialFind */);
                 continue;
@@ -628,19 +639,24 @@ void OplogFetcher::_createNewCursor(bool initialFind) {
     readersCreatedStats.increment();
 }
 
+void OplogFetcher::_disconnectIfExhaust() {
+    if (_cursor->connectionHasPendingReplies()) {
+        // Close the connection because the connection cannot be used anymore as more data is on
+        // the way from the server for the exhaust stream. Thus, we have to reconnect. The
+        // DBClientConnection does autoreconnect on the next network operation.
+        _conn->shutdown();
+        if (MONGO_unlikely(skipKillingExhaustCursorsOnErrors.shouldFail())) {
+            // Normally we send the server a KillCursor message when ~DBClientCursor() is called
+            // using a side connection. But that is not supported in unit tests. Use decouple()
+            // to override that behavior.
+            _cursor->decouple();
+        }
+    }
+}
+
 StatusWith<OplogFetcher::Documents> OplogFetcher::_getNextBatch() {
     Documents batch;
     try {
-        // If we are using exhaust oplog fetching in FCV other than 4.4, we should stop and retry
-        // with a regular cursor. Otherwise if we are not using exhaust oplog fetching in FCV 4.4,
-        // we should also stop and retry with an exhaust cursor.
-        uassert(4855900,
-                "Exhaust oplog fetching is only supported in FCV 4.4",
-                !oplogFetcherUsesExhaust ||
-                    _cursor->isExhaust() ==
-                        serverGlobalParams.featureCompatibility.isVersion(
-                            ServerGlobalParams::FeatureCompatibility::Version::kFullyUpgradedTo44));
-
         Timer timer;
         // If it is the first batch, we should initialize the cursor, which will run the find query.
         // Otherwise we should call more() to get the next batch.
@@ -687,18 +703,7 @@ StatusWith<OplogFetcher::Documents> OplogFetcher::_getNextBatch() {
         // metric intentionally tracks the time taken by the initial find as well.
         _lastBatchElapsedMS = timer.millis();
     } catch (const DBException& ex) {
-        if (_cursor->connectionHasPendingReplies()) {
-            // Close the connection because the connection cannot be used anymore as more data is on
-            // the way from the server for the exhaust stream. Thus, we have to reconnect. The
-            // DBClientConnection does autoreconnect on the next network operation.
-            _conn->shutdown();
-            if (MONGO_unlikely(skipKillingExhaustCursorsOnErrors.shouldFail())) {
-                // Normally we send the server a KillCursor message when ~DBClientCursor() is called
-                // using a side connection. But that is not supported in unit tests. Use decouple()
-                // to override that behavior.
-                _cursor->decouple();
-            }
-        }
+        _disconnectIfExhaust();
         return ex.toStatus("Error while getting the next batch in the oplog fetcher");
     }
 
