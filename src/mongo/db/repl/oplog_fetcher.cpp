@@ -607,9 +607,9 @@ void OplogFetcher::_createNewCursor(bool initialFind) {
                        serverGlobalParams.featureCompatibility.isVersion(
                            ServerGlobalParams::FeatureCompatibility::Version::kFullyUpgradedTo44));
     if (useExhaust) {
-        LOGV2(4855901, "Using exhaust cursors for oplog fetching");
+        LOGV2_DEBUG(4855901, 1, "Using exhaust cursors for oplog fetching");
     } else {
-        LOGV2(4855902, "Not using exhaust cursors for oplog fetching");
+        LOGV2_DEBUG(4855902, 1, "Not using exhaust cursors for oplog fetching");
     }
 
     _cursor = std::make_unique<DBClientCursor>(_conn.get(),
