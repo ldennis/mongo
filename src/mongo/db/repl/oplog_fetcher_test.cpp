@@ -2193,7 +2193,7 @@ TEST_F(OplogFetcherTest, DowngradeFrom44To42) {
                            dataReplicatorExternalState->getCurrentTermAndLastCommittedOpTime(),
                            false /* exhaustSupported */);
 
-    // Terminating empty batch from exhaust stream with cursorId 0.
+    // Terminating empty batch with cursorId 0.
     processSingleRequestResponse(
         conn, makeSubsequentBatch(0LL, {}, metadataObj, false /* moreToCome */), false);
 
