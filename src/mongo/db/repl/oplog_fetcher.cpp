@@ -32,6 +32,7 @@
 #include "mongo/db/repl/oplog_fetcher.h"
 
 #include "mongo/base/counter.h"
+#include "mongo/db/commands/feature_compatibility_version.h"
 #include "mongo/db/commands/server_status_metric.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/db/matcher/matcher.h"
@@ -55,6 +56,7 @@ MONGO_FAIL_POINT_DEFINE(hangAfterOplogFetcherCallbackScheduled);
 MONGO_FAIL_POINT_DEFINE(hangBeforeStartingOplogFetcher);
 MONGO_FAIL_POINT_DEFINE(hangBeforeOplogFetcherRetries);
 MONGO_FAIL_POINT_DEFINE(hangBeforeProcessingSuccessfulBatch);
+MONGO_FAIL_POINT_DEFINE(skipKillingExhaustCursorsOnErrors);
 
 namespace {
 class OplogBatchStats {
@@ -468,8 +470,10 @@ void OplogFetcher::_runQuery(const executor::TaskExecutor::CallbackArgs& callbac
         if (!batchResult.isOK()) {
             auto brStatus = batchResult.getStatus();
 
-            // Recreate a cursor if we have enough retries left.
-            if (_oplogFetcherRestartDecision->shouldContinue(this, brStatus)) {
+            // Recreate a cursor if we have enough retries left or if we need to retry due to FCV
+            // changes.
+            if (brStatus.code() == 4855900 ||
+                _oplogFetcherRestartDecision->shouldContinue(this, brStatus)) {
                 hangBeforeOplogFetcherRetries.pauseWhileSet();
                 _createNewCursor(false /* initialFind */);
                 continue;
@@ -599,16 +603,25 @@ void OplogFetcher::_createNewCursor(bool initialFind) {
                                                                : _getRetriedFindMaxTime());
     _setSocketTimeout(findTimeout);
 
-    _cursor = std::make_unique<DBClientCursor>(
-        _conn.get(),
-        _nss,
-        _makeFindQuery(findTimeout),
-        0 /* nToReturn */,
-        0 /* nToSkip */,
-        nullptr /* fieldsToReturn */,
-        QueryOption_CursorTailable | QueryOption_AwaitData | QueryOption_OplogReplay |
-            (oplogFetcherUsesExhaust ? QueryOption_Exhaust : 0),
-        _batchSize);
+    auto useExhaust = (oplogFetcherUsesExhaust &&
+                       serverGlobalParams.featureCompatibility.isVersion(
+                           ServerGlobalParams::FeatureCompatibility::Version::kFullyUpgradedTo44));
+    if (useExhaust) {
+        LOGV2(4855901, "Using exhaust cursors for oplog fetching");
+    } else {
+        LOGV2(4855902, "Not using exhaust cursors for oplog fetching");
+    }
+
+    _cursor = std::make_unique<DBClientCursor>(_conn.get(),
+                                               _nss,
+                                               _makeFindQuery(findTimeout),
+                                               0 /* nToReturn */,
+                                               0 /* nToSkip */,
+                                               nullptr /* fieldsToReturn */,
+                                               QueryOption_CursorTailable | QueryOption_AwaitData |
+                                                   QueryOption_OplogReplay |
+                                                   (useExhaust ? QueryOption_Exhaust : 0),
+                                               _batchSize);
 
     _firstBatch = true;
 
@@ -618,6 +631,16 @@ void OplogFetcher::_createNewCursor(bool initialFind) {
 StatusWith<OplogFetcher::Documents> OplogFetcher::_getNextBatch() {
     Documents batch;
     try {
+        // If we are using exhaust oplog fetching in FCV other than 4.4, we should stop and retry
+        // with a regular cursor. Otherwise if we are not using exhaust oplog fetching in FCV 4.4,
+        // we should also stop and retry with an exhaust cursor.
+        uassert(4855900,
+                "Exhaust oplog fetching is only supported in FCV 4.4",
+                !oplogFetcherUsesExhaust ||
+                    _cursor->isExhaust() ==
+                        serverGlobalParams.featureCompatibility.isVersion(
+                            ServerGlobalParams::FeatureCompatibility::Version::kFullyUpgradedTo44));
+
         Timer timer;
         // If it is the first batch, we should initialize the cursor, which will run the find query.
         // Otherwise we should call more() to get the next batch.
@@ -669,6 +692,12 @@ StatusWith<OplogFetcher::Documents> OplogFetcher::_getNextBatch() {
             // the way from the server for the exhaust stream. Thus, we have to reconnect. The
             // DBClientConnection does autoreconnect on the next network operation.
             _conn->shutdown();
+            if (MONGO_unlikely(skipKillingExhaustCursorsOnErrors.shouldFail())) {
+                // Normally we send the server a KillCursor message when ~DBClientCursor() is called
+                // using a side connection. But that is not supported in unit tests. Use decouple()
+                // to override that behavior.
+                _cursor->decouple();
+            }
         }
         return ex.toStatus("Error while getting the next batch in the oplog fetcher");
     }
