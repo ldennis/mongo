@@ -473,8 +473,9 @@ void OplogFetcher::_runQuery(const executor::TaskExecutor::CallbackArgs& callbac
             _cursor->isExhaust() !=
                 serverGlobalParams.featureCompatibility.isVersion(
                     ServerGlobalParams::FeatureCompatibility::Version::kFullyUpgradedTo44)) {
-            hangBeforeOplogFetcherRetries.pauseWhileSet();
             _disconnectIfExhaust();
+            LOGV2(4855903, "Oplog fetcher retrying because FCV has changed");
+            hangBeforeOplogFetcherRetries.pauseWhileSet();
             _createNewCursor(false /* initialFind */);
             continue;
         }
