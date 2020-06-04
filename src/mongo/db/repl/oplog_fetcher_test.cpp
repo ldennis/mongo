@@ -2165,6 +2165,13 @@ TEST_F(OplogFetcherTest, DowngradeFrom44To42) {
     serverGlobalParams.featureCompatibility.setVersion(
         ServerGlobalParams::FeatureCompatibility::Version::kFullyDowngradedTo42);
 
+    ON_BLOCK_EXIT([&] {
+        serverGlobalParams.featureCompatibility.setVersion(
+            ServerGlobalParams::FeatureCompatibility::Version::kFullyUpgradedTo44);
+        skipKillingCursor->setMode(FailPoint::off);
+        beforeRecreatingCursor->setMode(FailPoint::off);
+    });
+
     // Simulate an empty batch for the exhaust getMore and this will trigger a retry as FCV has
     // changed to 4.2.
     processSingleExhaustResponse(
@@ -2176,7 +2183,6 @@ TEST_F(OplogFetcherTest, DowngradeFrom44To42) {
     ASSERT_TRUE(conn->isFailed());
     // Allow retry and autoreconnect.
     beforeRecreatingCursor->setMode(FailPoint::off);
-    skipKillingCursor->setMode(FailPoint::off);
 
     // This is the find command from the retry.
     m = processSingleRequestResponse(
@@ -2208,6 +2214,10 @@ TEST_F(OplogFetcherTest, UpgradeFrom42To44) {
     // Start with FCV 4.2.
     serverGlobalParams.featureCompatibility.setVersion(
         ServerGlobalParams::FeatureCompatibility::Version::kDowngradingTo42);
+    ON_BLOCK_EXIT([&] {
+        serverGlobalParams.featureCompatibility.setVersion(
+            ServerGlobalParams::FeatureCompatibility::Version::kFullyUpgradedTo44);
+    });
 
     // Create an oplog fetcher without any retries, retrying FCV changes does not count towards the
     // max retries.

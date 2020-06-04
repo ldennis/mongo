@@ -346,8 +346,6 @@ private:
      */
     Milliseconds _getRetriedFindMaxTime() const;
 
-    void _disconnectIfExhaust();
-
     // Protects member data of this OplogFetcher.
     mutable Mutex _mutex = MONGO_MAKE_LATCH("OplogFetcher::_mutex");
 
