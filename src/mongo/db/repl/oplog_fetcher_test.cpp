@@ -2184,12 +2184,13 @@ TEST_F(OplogFetcherTest, DowngradeFrom44To42) {
     // Allow retry and autoreconnect.
     beforeRecreatingCursor->setMode(FailPoint::off);
 
-    // This is the find command from the retry.
+    // Simulate a response for the find command from the retry.
     m = processSingleRequestResponse(
         conn, makeFirstBatch(cursorId, {firstEntry}, metadataObj), true);
     validateFindCommand(
         m, lastFetched, durationCount<Milliseconds>(oplogFetcher->getRetriedFindMaxTime_forTest()));
 
+    // Simulate a response for the first getMore command after the retry.
     m = processSingleRequestResponse(
         conn, makeSubsequentBatch(cursorId, {}, metadataObj, false /* moreToCome */), true);
     // Test that a regular cursor is used in FCV 4.2.
@@ -2251,12 +2252,13 @@ TEST_F(OplogFetcherTest, UpgradeFrom42To44) {
     processSingleRequestResponse(
         conn, makeSubsequentBatch(cursorId, {}, metadataObj, false /* moreToCome */), true);
 
-    // This is the find command from the retry.
+    // Simulate a response for the find command from the retry.
     m = processSingleRequestResponse(
         conn, makeFirstBatch(cursorId, {firstEntry}, metadataObj), true);
     validateFindCommand(
         m, lastFetched, durationCount<Milliseconds>(oplogFetcher->getRetriedFindMaxTime_forTest()));
 
+    // Simulate a response for the first getMore command after the retry.
     m = processSingleRequestResponse(
         conn, makeSubsequentBatch(cursorId, {}, metadataObj, true /* moreToCome */), true);
     // Test that an exhaust cursor is used in FCV 4.4.
