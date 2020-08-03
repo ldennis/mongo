@@ -42,6 +42,7 @@
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/concurrency/write_conflict_exception.h"
 #include "mongo/db/db_raii.h"
+#include "mongo/db/fcv_op_observer.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/db/namespace_string.h"
