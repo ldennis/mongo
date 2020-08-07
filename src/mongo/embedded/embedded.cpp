@@ -46,6 +46,7 @@
 #include "mongo/db/commands/fsync_locked.h"
 #include "mongo/db/concurrency/lock_state.h"
 #include "mongo/db/dbdirectclient.h"
+#include "mongo/db/fcv_op_observer.h"
 #include "mongo/db/global_settings.h"
 #include "mongo/db/index/index_access_method_factory_impl.h"
 #include "mongo/db/kill_sessions_local.h"

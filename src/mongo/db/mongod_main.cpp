@@ -77,6 +77,7 @@
 #include "mongo/db/dbhelpers.h"
 #include "mongo/db/dbmessage.h"
 #include "mongo/db/exec/working_set_common.h"
+#include "mongo/db/fcv_op_observer.h"
 #include "mongo/db/free_mon/free_mon_mongod.h"
 #include "mongo/db/ftdc/ftdc_mongod.h"
 #include "mongo/db/global_settings.h"
@@ -989,6 +990,7 @@ void setUpObservers(ServiceContext* serviceContext) {
         opObserverRegistry->addObserver(std::make_unique<OpObserverImpl>());
     }
     opObserverRegistry->addObserver(std::make_unique<AuthOpObserver>());
+    opObserverRegistry->addObserver(std::make_unique<FcvOpObserver>());
 
     setupFreeMonitoringOpObserver(opObserverRegistry.get());
 

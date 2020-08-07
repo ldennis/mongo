@@ -35,6 +35,7 @@
 
 #include "mongo/bson/util/bson_extract.h"
 #include "mongo/db/catalog_raii.h"
+#include "mongo/db/fcv_op_observer.h"
 #include "mongo/db/op_observer_impl.h"
 #include "mongo/db/s/chunk_split_state_driver.h"
 #include "mongo/db/s/chunk_splitter.h"

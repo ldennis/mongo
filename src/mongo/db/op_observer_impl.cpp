@@ -40,8 +40,6 @@
 #include "mongo/db/catalog/collection_options.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/database_holder.h"
-#include "mongo/db/commands/feature_compatibility_version.h"
-#include "mongo/db/commands/feature_compatibility_version_parser.h"
 #include "mongo/db/commands/txn_cmds_gen.h"
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/concurrency/write_conflict_exception.h"
@@ -486,12 +484,6 @@ void OpObserverImpl::onInserts(OperationContext* opCtx,
         Scope::storedFuncMod(opCtx);
     } else if (nss.coll() == DurableViewCatalog::viewsCollectionName()) {
         DurableViewCatalog::onExternalChange(opCtx, nss);
-    } else if (nss == NamespaceString::kServerConfigurationNamespace) {
-        // We must check server configuration collection writes for featureCompatibilityVersion
-        // document changes.
-        for (auto it = first; it != last; it++) {
-            FeatureCompatibilityVersion::onInsertOrUpdate(opCtx, it->doc);
-        }
     } else if (nss == NamespaceString::kSessionTransactionsTableNamespace && !lastOpTime.isNull()) {
         for (auto it = first; it != last; it++) {
             MongoDSessionCatalog::observeDirectWriteToConfigTransactions(opCtx, it->doc);
@@ -562,10 +554,6 @@ void OpObserverImpl::onUpdate(OperationContext* opCtx, const OplogUpdateEntryArg
         Scope::storedFuncMod(opCtx);
     } else if (args.nss.coll() == DurableViewCatalog::viewsCollectionName()) {
         DurableViewCatalog::onExternalChange(opCtx, args.nss);
-    } else if (args.nss == NamespaceString::kServerConfigurationNamespace) {
-        // We must check server configuration collection writes for featureCompatibilityVersion
-        // document changes.
-        FeatureCompatibilityVersion::onInsertOrUpdate(opCtx, args.updateArgs.updatedDoc);
     } else if (args.nss == NamespaceString::kSessionTransactionsTableNamespace &&
                !opTime.writeOpTime.isNull()) {
         MongoDSessionCatalog::observeDirectWriteToConfigTransactions(opCtx,
@@ -632,11 +620,6 @@ void OpObserverImpl::onDelete(OperationContext* opCtx,
         Scope::storedFuncMod(opCtx);
     } else if (nss.coll() == DurableViewCatalog::viewsCollectionName()) {
         DurableViewCatalog::onExternalChange(opCtx, nss);
-    } else if (nss.isServerConfigurationCollection()) {
-        auto _id = documentKey.getId().firstElement();
-        if (_id.type() == BSONType::String &&
-            _id.String() == FeatureCompatibilityVersionParser::kParameterName)
-            uasserted(40670, "removing FeatureCompatibilityVersion document is not allowed");
     } else if (nss == NamespaceString::kSessionTransactionsTableNamespace &&
                !opTime.writeOpTime.isNull()) {
         MongoDSessionCatalog::observeDirectWriteToConfigTransactions(opCtx, documentKey.getId());
@@ -1324,9 +1307,6 @@ void OpObserverImpl::onReplicationRollback(OperationContext* opCtx,
     // Force the default read/write concern cache to reload on next access in case the defaults
     // document was rolled back.
     ReadWriteConcernDefaults::get(opCtx).invalidate();
-
-    // Make sure the in-memory FCV matches the on-disk FCV.
-    FeatureCompatibilityVersion::onReplicationRollback(opCtx);
 }
 
 }  // namespace mongo

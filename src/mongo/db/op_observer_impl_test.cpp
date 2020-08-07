@@ -33,6 +33,7 @@
 #include "mongo/db/concurrency/locker_noop.h"
 #include "mongo/db/db_raii.h"
 #include "mongo/db/dbdirectclient.h"
+#include "mongo/db/fcv_op_observer.h"
 #include "mongo/db/keys_collection_client_sharded.h"
 #include "mongo/db/keys_collection_manager.h"
 #include "mongo/db/logical_clock.h"

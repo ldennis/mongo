@@ -49,6 +49,7 @@
 #include "mongo/db/db_raii.h"
 #include "mongo/db/dbdirectclient.h"
 #include "mongo/db/dbhelpers.h"
+#include "mongo/db/fcv_op_observer.h"
 #include "mongo/db/global_settings.h"
 #include "mongo/db/index/index_build_interceptor.h"
 #include "mongo/db/index/index_descriptor.h"

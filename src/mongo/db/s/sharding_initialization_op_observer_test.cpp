@@ -33,6 +33,7 @@
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/dbdirectclient.h"
+#include "mongo/db/fcv_op_observer.h"
 #include "mongo/db/op_observer_impl.h"
 #include "mongo/db/op_observer_registry.h"
 #include "mongo/db/repl/replication_coordinator_mock.h"

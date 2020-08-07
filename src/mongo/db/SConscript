@@ -812,6 +812,23 @@ env.Library(
 )
 
 env.Library(
+    target="fcv_op_observer",
+    source=[
+        "fcv_op_observer.cpp",
+    ],
+    LIBDEPS=[
+        'catalog/collection_options',
+        'op_observer',
+        'op_observer_util',
+        '$BUILD_DIR/mongo/base',
+        '$BUILD_DIR/mongo/db/catalog/collection_catalog',
+    ],
+    LIBDEPS_PRIVATE=[
+        '$BUILD_DIR/mongo/db/commands/mongod_fcv',
+    ],
+)
+
+env.Library(
     target="service_entry_point_common",
     source=[
         "service_entry_point_common.cpp",
@@ -2218,6 +2235,7 @@ envWithAsio.CppUnitTest(
         'curop',
         'dbdirectclient',
         'dbmessage',
+        'fcv_op_observer',
         'index_build_entry_helpers',
         'index_builds_coordinator_mongod',
         'keys_collection_client_direct',

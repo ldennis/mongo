@@ -39,6 +39,7 @@
 #include "mongo/db/concurrency/write_conflict_exception.h"
 #include "mongo/db/db_raii.h"
 #include "mongo/db/dbdirectclient.h"
+#include "mongo/db/fcv_op_observer.h"
 #include "mongo/db/json.h"
 #include "mongo/db/op_observer_impl.h"
 #include "mongo/db/ops/update.h"

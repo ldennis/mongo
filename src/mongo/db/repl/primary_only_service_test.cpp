@@ -31,6 +31,7 @@
 
 #include "mongo/db/client.h"
 #include "mongo/db/dbdirectclient.h"
+#include "mongo/db/fcv_op_observer.h"
 #include "mongo/db/op_observer_impl.h"
 #include "mongo/db/op_observer_registry.h"
 #include "mongo/db/repl/oplog.h"
