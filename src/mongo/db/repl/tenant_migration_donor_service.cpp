@@ -41,7 +41,7 @@
 #include "mongo/db/persistent_task_store.h"
 #include "mongo/db/query/find_command_gen.h"
 #include "mongo/db/repl/repl_server_parameters_gen.h"
-#include "mongo/db/repl/tenant_migration_access_blocker.h"
+#include "mongo/db/repl/tenant_migration_donor_access_blocker.h"
 #include "mongo/db/repl/tenant_migration_donor_util.h"
 #include "mongo/db/repl/tenant_migration_state_machine_gen.h"
 #include "mongo/db/repl/wait_for_majority_service.h"
@@ -71,10 +71,12 @@ const ReadPreferenceSetting kPrimaryOnlyReadPreference(ReadPreference::PrimaryOn
 const Seconds kRecipientSyncDataTimeout(30);
 const int kMaxRecipientKeyDocsFindAttempts = 10;
 
-std::shared_ptr<TenantMigrationAccessBlocker> getTenantMigrationAccessBlocker(
+std::shared_ptr<TenantMigrationDonorAccessBlocker> getTenantMigrationAccessBlocker(
     ServiceContext* const serviceContext, StringData tenantId) {
-    return TenantMigrationAccessBlockerRegistry::get(serviceContext)
-        .getTenantMigrationAccessBlockerForTenantId(tenantId);
+    return std::dynamic_pointer_cast<TenantMigrationDonorAccessBlocker,
+                                     TenantMigrationAccessBlocker>(
+        TenantMigrationAccessBlockerRegistry::get(serviceContext)
+            .getTenantMigrationAccessBlockerForTenantId(tenantId));
 }
 
 bool shouldStopCreatingTTLIndex(Status status, const CancelationToken& token) {

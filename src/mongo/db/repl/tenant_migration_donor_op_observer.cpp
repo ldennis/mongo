@@ -46,14 +46,14 @@ const auto tenantIdToDeleteDecoration =
     OperationContext::declareDecoration<boost::optional<std::string>>();
 
 /**
- * Initializes the TenantMigrationAccessBlocker for the tenant migration denoted by the given state
- * doc.
+ * Initializes the TenantMigrationDonorAccessBlocker for the tenant migration denoted by the given
+ * state doc.
  */
 void onTransitionToDataSync(OperationContext* opCtx,
                             const TenantMigrationDonorDocument& donorStateDoc) {
     invariant(donorStateDoc.getState() == TenantMigrationDonorStateEnum::kDataSync);
 
-    auto mtab = std::make_shared<TenantMigrationAccessBlocker>(
+    auto mtab = std::make_shared<TenantMigrationDonorAccessBlocker>(
         opCtx->getServiceContext(),
         donorStateDoc.getTenantId().toString(),
         donorStateDoc.getRecipientConnectionString().toString());
@@ -72,7 +72,7 @@ void onTransitionToDataSync(OperationContext* opCtx,
 }
 
 /**
- * Transitions the TenantMigrationAccessBlocker to the blocking state.
+ * Transitions the TenantMigrationDonorAccessBlocker to the blocking state.
  */
 void onTransitionToBlocking(OperationContext* opCtx,
                             const TenantMigrationDonorDocument& donorStateDoc) {
@@ -84,9 +84,9 @@ void onTransitionToBlocking(OperationContext* opCtx,
     invariant(mtab);
 
     if (!opCtx->writesAreReplicated()) {
-        // A primary calls startBlockingWrites on the TenantMigrationAccessBlocker before reserving
-        // the OpTime for the "start blocking" write, so only secondaries call startBlockingWrites
-        // on the TenantMigrationAccessBlocker in the op observer.
+        // A primary calls startBlockingWrites on the TenantMigrationDonorAccessBlocker before
+        // reserving the OpTime for the "start blocking" write, so only secondaries call
+        // startBlockingWrites on the TenantMigrationDonorAccessBlocker in the op observer.
         mtab->startBlockingWrites();
     }
 
@@ -97,7 +97,7 @@ void onTransitionToBlocking(OperationContext* opCtx,
 }
 
 /**
- * Transitions the TenantMigrationAccessBlocker to the committed state.
+ * Transitions the TenantMigrationDonorAccessBlocker to the committed state.
  */
 void onTransitionToCommitted(OperationContext* opCtx,
                              const TenantMigrationDonorDocument& donorStateDoc) {
@@ -112,7 +112,7 @@ void onTransitionToCommitted(OperationContext* opCtx,
 }
 
 /**
- * Transitions the TenantMigrationAccessBlocker to the aborted state.
+ * Transitions the TenantMigrationDonorAccessBlocker to the aborted state.
  */
 void onTransitionToAborted(OperationContext* opCtx,
                            const TenantMigrationDonorDocument& donorStateDoc) {
@@ -126,8 +126,8 @@ void onTransitionToAborted(OperationContext* opCtx,
 }
 
 /**
- * Used to update the TenantMigrationAccessBlocker for the migration denoted by the donor's state
- * doc once the write for updating the doc is committed.
+ * Used to update the TenantMigrationDonorAccessBlocker for the migration denoted by the donor's
+ * state doc once the write for updating the doc is committed.
  */
 class TenantMigrationDonorCommitOrAbortHandler final : public RecoveryUnit::Change {
 public:
@@ -167,8 +167,8 @@ private:
 };
 
 /**
- * Used to remove the TenantMigrationAccessBlocker for the migration denoted by the donor's state
- * doc once the write for deleting the doc is committed.
+ * Used to remove the TenantMigrationDonorAccessBlocker for the migration denoted by the donor's
+ * state doc once the write for deleting the doc is committed.
  */
 class TenantMigrationDonorDeleteHandler final : public RecoveryUnit::Change {
 public:
@@ -188,8 +188,8 @@ private:
 
 /**
  * Returns true if the node is in startup recovery, initial sync or rollback. If the node is any
- * of these mode, the TenantMigrationAccessBlocker will be recovered outside of the OpObserver by
- * tenant_migration_donor::recoverTenantMigrationAccessBlockers.
+ * of these mode, the TenantMigrationDonorAccessBlocker will be recovered outside of the OpObserver
+ * by tenant_migration_donor::recoverTenantMigrationAccessBlockers.
  */
 bool inRecoveryMode(OperationContext* opCtx) {
     auto replCoord = repl::ReplicationCoordinator::get(opCtx);
