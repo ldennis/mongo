@@ -45,6 +45,13 @@ MONGO_FAIL_POINT_DEFINE(donorOpObserverFailAfterOnUpdate);
 const auto tenantIdToDeleteDecoration =
     OperationContext::declareDecoration<boost::optional<std::string>>();
 
+std::shared_ptr<TenantMigrationDonorAccessBlocker> getTenantMigrationDonorAccessBlocker(
+    ServiceContext* const serviceContext, StringData tenantId) {
+    return checked_pointer_cast<TenantMigrationDonorAccessBlocker>(
+        TenantMigrationAccessBlockerRegistry::get(serviceContext)
+            .getTenantMigrationAccessBlockerForTenantId(tenantId));
+}
+
 /**
  * Initializes the TenantMigrationDonorAccessBlocker for the tenant migration denoted by the given
  * state doc.
@@ -79,8 +86,8 @@ void onTransitionToBlocking(OperationContext* opCtx,
     invariant(donorStateDoc.getState() == TenantMigrationDonorStateEnum::kBlocking);
     invariant(donorStateDoc.getBlockTimestamp());
 
-    auto mtab = TenantMigrationAccessBlockerRegistry::get(opCtx->getServiceContext())
-                    .getTenantMigrationAccessBlockerForTenantId(donorStateDoc.getTenantId());
+    auto mtab = getTenantMigrationDonorAccessBlocker(opCtx->getServiceContext(),
+                                                     donorStateDoc.getTenantId());
     invariant(mtab);
 
     if (!opCtx->writesAreReplicated()) {
@@ -104,8 +111,8 @@ void onTransitionToCommitted(OperationContext* opCtx,
     invariant(donorStateDoc.getState() == TenantMigrationDonorStateEnum::kCommitted);
     invariant(donorStateDoc.getCommitOrAbortOpTime());
 
-    auto mtab = TenantMigrationAccessBlockerRegistry::get(opCtx->getServiceContext())
-                    .getTenantMigrationAccessBlockerForTenantId(donorStateDoc.getTenantId());
+    auto mtab = getTenantMigrationDonorAccessBlocker(opCtx->getServiceContext(),
+                                                     donorStateDoc.getTenantId());
     invariant(mtab);
 
     mtab->setCommitOpTime(opCtx, donorStateDoc.getCommitOrAbortOpTime().get());
@@ -119,8 +126,8 @@ void onTransitionToAborted(OperationContext* opCtx,
     invariant(donorStateDoc.getState() == TenantMigrationDonorStateEnum::kAborted);
     invariant(donorStateDoc.getCommitOrAbortOpTime());
 
-    auto mtab = TenantMigrationAccessBlockerRegistry::get(opCtx->getServiceContext())
-                    .getTenantMigrationAccessBlockerForTenantId(donorStateDoc.getTenantId());
+    auto mtab = getTenantMigrationDonorAccessBlocker(opCtx->getServiceContext(),
+                                                     donorStateDoc.getTenantId());
     invariant(mtab);
     mtab->setAbortOpTime(opCtx, donorStateDoc.getCommitOrAbortOpTime().get());
 }

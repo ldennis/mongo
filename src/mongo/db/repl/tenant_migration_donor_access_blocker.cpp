@@ -104,7 +104,7 @@ Status TenantMigrationDonorAccessBlocker::waitUntilCommittedOrAborted(OperationC
     auto executor = getAsyncBlockingOperationsExecutor();
     std::vector<ExecutorFuture<void>> futures;
 
-    futures.emplace_back(onCompletion().thenRunOn(executor));
+    futures.emplace_back(_onCompletion().thenRunOn(executor));
 
     if (opCtx->hasDeadline()) {
         auto deadlineReachedFuture =
@@ -120,7 +120,7 @@ Status TenantMigrationDonorAccessBlocker::waitUntilCommittedOrAborted(OperationC
     const auto& [status, idx] = waitResult.getValue();
 
     if (idx == 0) {
-        // onCompletion() finished first.
+        // _onCompletion() finished first.
         cancelTimeoutSource.cancel();
         return status;
     } else if (idx == 1) {
@@ -352,10 +352,6 @@ void TenantMigrationDonorAccessBlocker::_onMajorityCommitAbortOpTime(stdx::uniqu
     LOGV2(5093805,
           "Tenant migration finished waiting for abort OpTime to be majority-committed",
           "tenantId"_attr = _tenantId);
-}
-
-SharedSemiFuture<void> TenantMigrationDonorAccessBlocker::onCompletion() {
-    return _completionPromise.getFuture();
 }
 
 void TenantMigrationDonorAccessBlocker::appendInfoForServerStatus(BSONObjBuilder* builder) const {

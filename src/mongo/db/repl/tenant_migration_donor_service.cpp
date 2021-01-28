@@ -73,8 +73,7 @@ const int kMaxRecipientKeyDocsFindAttempts = 10;
 
 std::shared_ptr<TenantMigrationDonorAccessBlocker> getTenantMigrationAccessBlocker(
     ServiceContext* const serviceContext, StringData tenantId) {
-    return std::dynamic_pointer_cast<TenantMigrationDonorAccessBlocker,
-                                     TenantMigrationAccessBlocker>(
+    return checked_pointer_cast<TenantMigrationDonorAccessBlocker>(
         TenantMigrationAccessBlockerRegistry::get(serviceContext)
             .getTenantMigrationAccessBlockerForTenantId(tenantId));
 }

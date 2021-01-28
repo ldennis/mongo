@@ -68,34 +68,12 @@ public:
     //
     virtual Status checkIfCanBuildIndex() = 0;
 
-    //
-    // Called while donating this database.
-    //
-
-    virtual void startBlockingWrites() = 0;
-    virtual void startBlockingReadsAfter(const Timestamp& timestamp) = 0;
-    virtual void rollBackStartBlocking() = 0;
-
-    /**
-     * Stores the commit opTime and calls _onMajorityCommitCommitOpTime if the opTime is already
-     * majority-committed.
-     */
-    virtual void setCommitOpTime(OperationContext* opCtx, repl::OpTime opTime) = 0;
-
-    /**
-     * Stores the abort opTime and calls _onMajorityCommitAbortOpTime if the opTime is already
-     * majority-committed.
-     */
-    virtual void setAbortOpTime(OperationContext* opCtx, repl::OpTime opTime) = 0;
-
     /**
      * If the given opTime is the commit or abort opTime and the completion promise has not been
      * fulfilled, calls _onMajorityCommitCommitOpTime or _onMajorityCommitAbortOpTime to transition
      * out of blocking and fulfill the promise.
      */
     virtual void onMajorityCommitPointUpdate(repl::OpTime opTime) = 0;
-
-    virtual SharedSemiFuture<void> onCompletion() = 0;
 
     virtual std::shared_ptr<executor::TaskExecutor> getAsyncBlockingOperationsExecutor() = 0;
 

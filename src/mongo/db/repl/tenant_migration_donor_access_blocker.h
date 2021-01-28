@@ -197,34 +197,12 @@ public:
     //
     Status checkIfCanBuildIndex() final;
 
-    //
-    // Called while donating this database.
-    //
-
-    void startBlockingWrites() final;
-    void startBlockingReadsAfter(const Timestamp& timestamp) final;
-    void rollBackStartBlocking() final;
-
-    /**
-     * Stores the commit opTime and calls _onMajorityCommitCommitOpTime if the opTime is already
-     * majority-committed.
-     */
-    void setCommitOpTime(OperationContext* opCtx, repl::OpTime opTime) final;
-
-    /**
-     * Stores the abort opTime and calls _onMajorityCommitAbortOpTime if the opTime is already
-     * majority-committed.
-     */
-    void setAbortOpTime(OperationContext* opCtx, repl::OpTime opTime) final;
-
     /**
      * If the given opTime is the commit or abort opTime and the completion promise has not been
      * fulfilled, calls _onMajorityCommitCommitOpTime or _onMajorityCommitAbortOpTime to transition
      * out of blocking and fulfill the promise.
      */
     void onMajorityCommitPointUpdate(repl::OpTime opTime) final;
-
-    SharedSemiFuture<void> onCompletion() final;
 
     std::shared_ptr<executor::TaskExecutor> getAsyncBlockingOperationsExecutor() final {
         return _asyncBlockingOperationsExecutor;
@@ -235,12 +213,36 @@ public:
     // Returns structured info with current tenant ID and connection string.
     BSONObj getDebugInfo() const final;
 
+    //
+    // Called while donating this database.
+    //
+
+    void startBlockingWrites();
+    void startBlockingReadsAfter(const Timestamp& timestamp);
+    void rollBackStartBlocking();
+
+    /**
+     * Stores the commit opTime and calls _onMajorityCommitCommitOpTime if the opTime is already
+     * majority-committed.
+     */
+    void setCommitOpTime(OperationContext* opCtx, repl::OpTime opTime);
+
+    /**
+     * Stores the abort opTime and calls _onMajorityCommitAbortOpTime if the opTime is already
+     * majority-committed.
+     */
+    void setAbortOpTime(OperationContext* opCtx, repl::OpTime opTime);
+
 private:
     /**
      * The access states of an mtab.
      */
     enum class State { kAllow, kBlockWrites, kBlockWritesAndReads, kReject, kAborted };
     std::string _stateToString(State state) const;
+
+    SharedSemiFuture<void> _onCompletion() {
+        return _completionPromise.getFuture();
+    }
 
     void _onMajorityCommitCommitOpTime(stdx::unique_lock<Latch>& lk);
     void _onMajorityCommitAbortOpTime(stdx::unique_lock<Latch>& lk);
