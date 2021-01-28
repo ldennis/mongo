@@ -30,8 +30,8 @@
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/catalog_raii.h"
+#include "mongo/db/repl/tenant_migration_access_util.h"
 #include "mongo/db/repl/tenant_migration_donor_op_observer.h"
-#include "mongo/db/repl/tenant_migration_donor_util.h"
 #include "mongo/db/repl/tenant_migration_state_machine_gen.h"
 
 namespace mongo {
@@ -196,7 +196,7 @@ private:
 /**
  * Returns true if the node is in startup recovery, initial sync or rollback. If the node is any
  * of these mode, the TenantMigrationDonorAccessBlocker will be recovered outside of the OpObserver
- * by tenant_migration_donor::recoverTenantMigrationAccessBlockers.
+ * by tenant_migration_access::recoverTenantMigrationAccessBlockers.
  */
 bool inRecoveryMode(OperationContext* opCtx) {
     auto replCoord = repl::ReplicationCoordinator::get(opCtx);
@@ -218,7 +218,7 @@ void TenantMigrationDonorOpObserver::onInserts(OperationContext* opCtx,
                                                bool fromMigrate) {
     if (nss == NamespaceString::kTenantMigrationDonorsNamespace && !inRecoveryMode(opCtx)) {
         for (auto it = first; it != last; it++) {
-            auto donorStateDoc = tenant_migration_donor::parseDonorStateDocument(it->doc);
+            auto donorStateDoc = tenant_migration_access::parseDonorStateDocument(it->doc);
             switch (donorStateDoc.getState()) {
                 case TenantMigrationDonorStateEnum::kDataSync:
                     onTransitionToDataSync(opCtx, donorStateDoc);
@@ -245,7 +245,7 @@ void TenantMigrationDonorOpObserver::onUpdate(OperationContext* opCtx,
                                               const OplogUpdateEntryArgs& args) {
     if (args.nss == NamespaceString::kTenantMigrationDonorsNamespace && !inRecoveryMode(opCtx)) {
         auto donorStateDoc =
-            tenant_migration_donor::parseDonorStateDocument(args.updateArgs.updatedDoc);
+            tenant_migration_access::parseDonorStateDocument(args.updateArgs.updatedDoc);
         switch (donorStateDoc.getState()) {
             case TenantMigrationDonorStateEnum::kBlocking:
                 onTransitionToBlocking(opCtx, donorStateDoc);
@@ -270,7 +270,7 @@ void TenantMigrationDonorOpObserver::aboutToDelete(OperationContext* opCtx,
                                                    NamespaceString const& nss,
                                                    BSONObj const& doc) {
     if (nss == NamespaceString::kTenantMigrationDonorsNamespace && !inRecoveryMode(opCtx)) {
-        auto donorStateDoc = tenant_migration_donor::parseDonorStateDocument(doc);
+        auto donorStateDoc = tenant_migration_access::parseDonorStateDocument(doc);
         uassert(ErrorCodes::IllegalOperation,
                 str::stream() << "cannot delete a donor's state document " << doc
                               << " since it has not been marked as garbage collectable",

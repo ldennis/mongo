@@ -32,7 +32,7 @@
 #include "mongo/platform/basic.h"
 #include "mongo/util/str.h"
 
-#include "mongo/db/repl/tenant_migration_donor_util.h"
+#include "mongo/db/repl/tenant_migration_access_util.h"
 
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/commands/tenant_migration_recipient_cmds_gen.h"
@@ -57,7 +57,7 @@ namespace mongo {
 // Failpoint that will cause recoverTenantMigrationAccessBlockers to return early.
 MONGO_FAIL_POINT_DEFINE(skipRecoverTenantMigrationAccessBlockers);
 
-namespace tenant_migration_donor {
+namespace tenant_migration_access {
 
 namespace {
 
@@ -304,6 +304,6 @@ void createRetryableWritesView(OperationContext* opCtx, Database* db) {
         });
 }
 
-}  // namespace tenant_migration_donor
+}  // namespace tenant_migration_access
 
 }  // namespace mongo

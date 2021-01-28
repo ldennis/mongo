@@ -45,7 +45,7 @@
 
 namespace mongo {
 
-namespace tenant_migration_donor {
+namespace tenant_migration_access {
 
 /**
  * Returns a TenantMigrationDonorDocument constructed from the given bson doc and validate the
@@ -58,7 +58,7 @@ TenantMigrationDonorDocument parseDonorStateDocument(const BSONObj& doc);
  * in the read blocking state at the given atClusterTime or afterClusterTime or the selected read
  * timestamp, blocks until the migration is committed or aborted.
  * TODO SERVER-53505: Change this to return
- * SharedSemiFuture<TenantMigrationDonorAccessBlocker::State>.
+ *                    SharedSemiFuture<TenantMigrationDonorAccessBlocker::State>.
  */
 void checkIfCanReadOrBlock(OperationContext* opCtx, StringData dbName);
 
@@ -103,6 +103,6 @@ void performNoopWrite(OperationContext* opCtx, StringData msg);
  */
 void createRetryableWritesView(OperationContext* opCtx, Database* db);
 
-}  // namespace tenant_migration_donor
+}  // namespace tenant_migration_access
 
 }  // namespace mongo
