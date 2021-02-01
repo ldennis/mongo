@@ -41,7 +41,7 @@
 #include "mongo/db/persistent_task_store.h"
 #include "mongo/db/query/find_command_gen.h"
 #include "mongo/db/repl/repl_server_parameters_gen.h"
-#include "mongo/db/repl/tenant_migration_access_util.h"
+#include "mongo/db/repl/tenant_migration_access_blocker_util.h"
 #include "mongo/db/repl/tenant_migration_donor_access_blocker.h"
 #include "mongo/db/repl/tenant_migration_state_machine_gen.h"
 #include "mongo/db/repl/wait_for_majority_service.h"
@@ -134,7 +134,7 @@ TenantMigrationDonorService::Instance::Instance(ServiceContext* const serviceCon
                                                 const BSONObj& initialState)
     : repl::PrimaryOnlyService::TypedInstance<Instance>(),
       _serviceContext(serviceContext),
-      _stateDoc(tenant_migration_access::parseDonorStateDocument(initialState)),
+      _stateDoc(tenant_migration_access_blocker::parseDonorStateDocument(initialState)),
       _instanceName(kServiceName + "-" + _stateDoc.getTenantId()),
       _recipientUri(
           uassertStatusOK(MongoURI::parse(_stateDoc.getRecipientConnectionString().toString()))) {

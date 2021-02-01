@@ -45,7 +45,7 @@
 
 namespace mongo {
 
-namespace tenant_migration_access {
+namespace tenant_migration_access_blocker {
 
 /**
  * Returns a TenantMigrationDonorDocument constructed from the given bson doc and validate the
@@ -103,6 +103,6 @@ void performNoopWrite(OperationContext* opCtx, StringData msg);
  */
 void createRetryableWritesView(OperationContext* opCtx, Database* db);
 
-}  // namespace tenant_migration_access
+}  // namespace tenant_migration_access_blocker
 
 }  // namespace mongo
