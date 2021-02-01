@@ -69,6 +69,13 @@ const auto donorStateDocToDeleteDecoration = OperationContext::declareDecoration
 
 }  // namespace
 
+std::shared_ptr<TenantMigrationDonorAccessBlocker> getTenantMigrationDonorAccessBlocker(
+    ServiceContext* const serviceContext, StringData tenantId) {
+    return checked_pointer_cast<TenantMigrationDonorAccessBlocker>(
+        TenantMigrationAccessBlockerRegistry::get(serviceContext)
+            .getTenantMigrationAccessBlockerForTenantId(tenantId));
+}
+
 TenantMigrationDonorDocument parseDonorStateDocument(const BSONObj& doc) {
     auto donorStateDoc =
         TenantMigrationDonorDocument::parse(IDLParserErrorContext("donorStateDoc"), doc);

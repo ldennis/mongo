@@ -71,13 +71,6 @@ const ReadPreferenceSetting kPrimaryOnlyReadPreference(ReadPreference::PrimaryOn
 const Seconds kRecipientSyncDataTimeout(30);
 const int kMaxRecipientKeyDocsFindAttempts = 10;
 
-std::shared_ptr<TenantMigrationDonorAccessBlocker> getTenantMigrationAccessBlocker(
-    ServiceContext* const serviceContext, StringData tenantId) {
-    return checked_pointer_cast<TenantMigrationDonorAccessBlocker>(
-        TenantMigrationAccessBlockerRegistry::get(serviceContext)
-            .getTenantMigrationAccessBlockerForTenantId(tenantId));
-}
-
 bool shouldStopCreatingTTLIndex(Status status, const CancelationToken& token) {
     return status.isOK() || token.isCanceled();
 }
@@ -460,8 +453,9 @@ ExecutorFuture<repl::OpTime> TenantMigrationDonorService::Instance::_updateState
                            case TenantMigrationDonorStateEnum::kBlocking: {
                                _stateDoc.setBlockTimestamp(oplogSlot.getTimestamp());
 
-                               auto mtab = getTenantMigrationAccessBlocker(_serviceContext,
-                                                                           _stateDoc.getTenantId());
+                               auto mtab = tenant_migration_access_blocker::
+                                   getTenantMigrationDonorAccessBlocker(_serviceContext,
+                                                                        _stateDoc.getTenantId());
                                invariant(mtab);
 
                                mtab->startBlockingWrites();
@@ -822,7 +816,8 @@ SemiFuture<void> TenantMigrationDonorService::Instance::run(
                 return ExecutorFuture<void>(**executor, Status::OK());
             }
 
-            auto mtab = getTenantMigrationAccessBlocker(_serviceContext, _stateDoc.getTenantId());
+            auto mtab = tenant_migration_access_blocker::getTenantMigrationDonorAccessBlocker(
+                _serviceContext, _stateDoc.getTenantId());
             if (status == ErrorCodes::ConflictingOperationInProgress || !mtab) {
                 stdx::lock_guard<Latch> lg(_mutex);
                 if (!_initialDonorStateDurablePromise.getFuture().isReady()) {

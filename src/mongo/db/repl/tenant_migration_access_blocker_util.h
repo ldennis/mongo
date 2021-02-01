@@ -47,6 +47,9 @@ namespace mongo {
 
 namespace tenant_migration_access_blocker {
 
+std::shared_ptr<TenantMigrationDonorAccessBlocker> getTenantMigrationDonorAccessBlocker(
+    ServiceContext* const serviceContext, StringData tenantId);
+
 /**
  * Returns a TenantMigrationDonorDocument constructed from the given bson doc and validate the
  * resulting doc.
